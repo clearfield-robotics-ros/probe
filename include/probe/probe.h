@@ -11,17 +11,7 @@ public:
 	Probe();
 	~Probe();
 
-	// static void probeModeClbk(const std_msgs::String& msg);
-	// static void probeForceClbk(const std_msgs::Float32& msg);
-	// static void probeCarriagePosClbk(const std_msgs::Float32& msg);
-	// static void gantryModeClbk(const std_msgs::String& msg);
-	// static void gantryPosActualClbk(const std_msgs::Float32& msg);
-
-	
-
-
 private:
-
 
 };
 
