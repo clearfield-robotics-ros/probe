@@ -4,6 +4,7 @@
 #include "std_msgs/Bool.h"
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
+#include "geometry_msgs/PointStamped.h"
 
 class Probe
 {
