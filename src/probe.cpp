@@ -2,24 +2,12 @@
 
 #define M_PI 3.14159265358979323846
 
-enum class ProbeMode{Home, Initialized, Probing, DoneProbing, Stop}; // enum class prevents name conflicts
-enum class GantryMode{Home, Initialized, Positioning, DonePositioning, Stop};
+int probe_mode = 0;
+int gantry_mode = 0;
 
-enum class ProbeCmd{Home, Initialize, Probe, Stop};
-enum class GantryCmd{Home, Initialize, Position, Stop};
-
-ProbeMode probe_mode = ProbeMode::Home;
-GantryMode gantry_mode = GantryMode::Home;
-
-ProbeCmd probe_cmd = ProbeCmd::Home;
-GantryCmd gantry_cmd = GantryCmd::Home;
-
-ProbeMode convertProbeMode(const std::string& str);
-GantryMode convertGantryMode(const std::string& str);
-
-std_msgs::String probe_mode_cmd_msg;
-std_msgs::String gantry_mode_cmd_msg;
-std_msgs::Float32 gantry_pos_cmd_msg;
+std_msgs::Int32 probe_send_msg;
+std_msgs::Int32 gantry_send_msg;
+// std_msgs::Float32 gantry_pos_cmd_msg;
 
 static tf::TransformBroadcaster br;
 tf::TransformListener probe_listener;
@@ -33,53 +21,42 @@ std::vector<double> target_centers = {0.2, 0.3, 0.4, 0.5, 0.6, 0.7};
 int num_targets = target_centers.size();
 int current_target_id = 0;
 
-void probeModeClbk(const std_msgs::String& msg){
-	probe_mode = convertProbeMode(msg.data);
+float probe_carriage_pos;
+float gantry_carriage_pos;
+
+int gantry_pos_cmd_reached;
+std::vector<geometry_msgs::PointStamped> contact_points;
+
+
+void probeStatusClbk(const std_msgs::Int32MultiArray& msg){
+	probe_mode = msg.data[0]; // first entry is the reported state
+	probe_carriage_pos = (float)msg.data[1]/1000.0; // second entry is the probe carriage position [mm]
+	probe_tip.setOrigin( tf::Vector3(0,0.4+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
+	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 }
 
-void probeForceClbk(const std_msgs::Float32& msg){
-	// convert the origin of the probe tip to a new point and save it
-}
-
-void probeCarriagePosClbk(const std_msgs::Float32& msg){
-	probe_tip.setOrigin( tf::Vector3(0,0.4+msg.data,0));
-	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip"));
+void probeContactClbk(const std_msgs::Int32MultiArray& msg){
+	probe_carriage_pos = (float)msg.data[1]/1000.0; // second entry is the probe carriage position [mm]
+	probe_tip.setOrigin( tf::Vector3(0,0.4+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
+	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	tf::StampedTransform probe_tf;
 	probe_listener.lookupTransform("probe_tip","base_link",ros::Time(0),probe_tf);
-	geometry_msgs::PointStamped point;
+	geometry_msgs::PointStamped cp; // single contact point (cp)
 	tf::Vector3 probe_tip_origin;
 	probe_tip_origin = probe_tf.getOrigin();
-	point.point.x = probe_tip_origin.x();
-	point.point.y = probe_tip_origin.y();
-	point.point.z = probe_tip_origin.z();
+	cp.point.x = probe_tip_origin.x();
+	cp.point.y = probe_tip_origin.y();
+	cp.point.z = probe_tip_origin.z();
+	contact_points.push_back(cp);
 }
 
-void gantryModeClbk(const std_msgs::String& msg){
-	gantry_mode = convertGantryMode(msg.data);
-
+void gantryStatusClbk(const std_msgs::Int32MultiArray& msg){
+	gantry_mode = msg.data[0]; // first entry is the reported state
+	gantry_carriage_pos = (float)msg.data[1]/1000.0; // second entry is the gantry carriage position [mm]
+	gantry_pos_cmd_reached = msg.data[2];
+	gantry_carriage.setOrigin( tf::Vector3(0,0.1+gantry_carriage_pos,0)); // update origin of gantry carriage coordinate frame
+	br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform
 }
-
-void gantryCarriagePosClbk(const std_msgs::Float32& msg){
-	gantry_carriage.setOrigin( tf::Vector3(0,msg.data,0));
-	br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage"));
-}
-
-ProbeMode convertProbeMode(const std::string& str){
-	if(str=="Home") return ProbeMode::Home;
-	else if (str=="Initialized") return ProbeMode::Initialized;
-	else if (str=="Probing") return ProbeMode::Probing;
-	else if (str=="DoneProbing") return ProbeMode::DoneProbing;
-	else if (str=="Stop") return ProbeMode::Stop;
-}
-
-GantryMode convertGantryMode(const std::string& str){
-	if(str=="Home") return GantryMode::Home;
-	else if (str=="Initialized") return GantryMode::Initialized;
-	else if (str=="Positioning") return GantryMode::Positioning;
-	else if (str=="DonePositioning") return GantryMode::DonePositioning;
-	else if (str=="Stop") return GantryMode::Stop;
-}
-
 
 int main(int argc, char **argv)
 {
@@ -88,19 +65,17 @@ int main(int argc, char **argv)
 	ros::init(argc, argv, "probe");
 	ros::Rate loop_rate(10);
 
-	n.getParam("target_centers", target_centers);
+	// n.getParam("target_centers", target_centers);
 
 // publishers
-	ros::Publisher probe_mode_cmd_pub = n.advertise<std_msgs::String>("probe_mode_cmd", 1000);
-	ros::Publisher gantry_mode_cmd_pub = n.advertise<std_msgs::String>("gantry_mode_cmd", 1000);
-	ros::Publisher gantry_pos_cmd_pub = n.advertise<std_msgs::Float32>("gantry_pos_cmd", 1000);
+	ros::Publisher probe_send_pub = n.advertise<std_msgs::Int32>("probe_cmd_send", 1000);
+	ros::Publisher gantry_send_pub = n.advertise<std_msgs::Int32MultiArray>("gantry_cmd_send", 1000);
+	// ros::Publisher gantry_pos_cmd_pub = n.advertise<std_msgs::Float32>("gantry_pos_cmd", 1000);
 
   // subscribers
-	ros::Subscriber probe_mode_sub = n.subscribe("probe_mode", 1000, probeModeClbk);
-	ros::Subscriber probe_force_sub = n.subscribe("probe_force", 1000, probeForceClbk);
-	ros::Subscriber probe_carriage_pos_sub = n.subscribe("probe_carriage_pos", 1000, probeCarriagePosClbk);
-	ros::Subscriber gantry_mode_sub = n.subscribe("gantry_mode", 1000, gantryModeClbk);
-	ros::Subscriber gantry_carriage_pos_sub = n.subscribe("gantry_carriage_pos", 1000, gantryCarriagePosClbk);
+	ros::Subscriber probe_status_sub = n.subscribe("probe_status_reply", 1000, probeStatusClbk);
+	ros::Subscriber probe_contact_sub = n.subscribe("probe_contact_reply", 1000, probeContactClbk);
+	ros::Subscriber gantry_status_sub = n.subscribe("gantry_status_reply", 1000, gantryStatusClbk);
 
 	// initialize transforms
 	gantry.setOrigin( tf::Vector3(0.2,-0.2,0.4));
@@ -114,8 +89,7 @@ int main(int argc, char **argv)
 	probe_rail.setOrigin( tf::Vector3(0,-0.1,-0.2));
 	tf::Matrix3x3 m_rot;
 	m_rot.setEulerYPR(0, -30*M_PI/180, 0);
-
-// Convert into quaternion
+	// Convert into quaternion
 	tf::Quaternion quat;
 	m_rot.getRotation(quat);
 	probe_rail.setRotation(tf::Quaternion(quat));
@@ -129,87 +103,84 @@ int main(int argc, char **argv)
 	{
 
 		switch(gantry_mode){
-			case GantryMode::Home:
+			case 0:
 			break;
-			case GantryMode::Initialized:
-			probe_cmd = ProbeCmd::Initialize;
+			case 1:
+			// probe_cmd = ProbeCmd::Initialize;
 			break;
-			case GantryMode::Positioning:
+			case 2:
 			break;
-			case GantryMode::DonePositioning:
-			probe_cmd = ProbeCmd::Probe; // issue probe command
+			case 3:
+			// probe_cmd = ProbeCmd::Probe; // issue probe command
 			break;
-			case GantryMode::Stop:
-			break;
+
 			default:
 			break;	
 		}
 
 		switch(probe_mode){
-			case ProbeMode::Home:
+			case 0:
 			break;
-			case ProbeMode::Initialized:
-			gantry_cmd = GantryCmd::Position; // move to first position
+			case 1:
+			// gantry_cmd = GantryCmd::Position; // move to first position
 			break;
-			case ProbeMode::Probing:
+			case 2:
 			break;
-			case ProbeMode::DoneProbing:
+			case 3:
 			if(current_target_id<num_targets){
-				gantry_cmd = GantryCmd::Position;
+				// gantry_cmd = GantryCmd::Position;
 			} else {
-				gantry_cmd = GantryCmd::Home;
+				// gantry_cmd = GantryCmd::Home;
 			}
 			current_target_id++;
 			break;
-			case ProbeMode::Stop:
-			break;
 			default:
 			break;	
 		}
 
-		switch(probe_cmd){
-			case ProbeCmd::Home:
-			probe_mode_cmd_msg.data = "Home";
-			probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
-			break;
-			case ProbeCmd::Initialize:
-			probe_mode_cmd_msg.data = "Initialize";
-			probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
-			break;
-			case ProbeCmd::Probe:
-			probe_mode_cmd_msg.data = "Probe";
-			probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
-			break;
-			case ProbeCmd::Stop:
-			probe_mode_cmd_msg.data = "Stop";
-			probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
-			break;
-			default:
-			break;					
-		}
+		// switch(probe_cmd){
+		// 	case ProbeCmd::Home:
+		// 	probe_mode_cmd_msg.data = "Home";
+		// 	probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
+		// 	break;
+		// 	case ProbeCmd::Initialize:
+		// 	probe_mode_cmd_msg.data = "Initialize";
+		// 	probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
+		// 	break;
+		// 	case ProbeCmd::Probe:
+		// 	probe_mode_cmd_msg.data = "Probe";
+		// 	probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
+		// 	break;
+		// 	case ProbeCmd::Stop:
+		// 	probe_mode_cmd_msg.data = "Stop";
+		// 	probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
+		// 	break;
+		// 	default:
+		// 	break;					
+		// }
 
-		switch(gantry_cmd){
-			case GantryCmd::Home:
-			gantry_mode_cmd_msg.data = "Home";
-			gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
-			break;
-			case GantryCmd::Initialize:
-			gantry_mode_cmd_msg.data = "Initialize";
-			gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
-			break;
-			case GantryCmd::Position:
-			gantry_mode_cmd_msg.data = "Position";
-			gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
-			gantry_pos_cmd_msg.data = target_centers[current_target_id];
-			gantry_pos_cmd_pub.publish(gantry_pos_cmd_msg);
-			break;
-			case GantryCmd::Stop:
-			gantry_mode_cmd_msg.data = "Stop";
-			gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
-			break;
-			default:
-			break;	
-		}
+		// switch(gantry_cmd){
+		// 	case GantryCmd::Home:
+		// 	gantry_mode_cmd_msg.data = "Home";
+		// 	gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
+		// 	break;
+		// 	case GantryCmd::Initialize:
+		// 	gantry_mode_cmd_msg.data = "Initialize";
+		// 	gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
+		// 	break;
+		// 	case GantryCmd::Position:
+		// 	gantry_mode_cmd_msg.data = "Position";
+		// 	gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
+		// 	gantry_pos_cmd_msg.data = target_centers[current_target_id];
+		// 	gantry_pos_cmd_pub.publish(gantry_pos_cmd_msg);
+		// 	break;
+		// 	case GantryCmd::Stop:
+		// 	gantry_mode_cmd_msg.data = "Stop";
+		// 	gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
+		// 	break;
+		// 	default:
+		// 	break;	
+		// }
 
 
 		ros::spinOnce();
