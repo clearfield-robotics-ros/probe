@@ -20,8 +20,9 @@ int num_probes_per_obj = 5;
 float spacing_between_probes = 0.02; // [m] = 2cm
 float sample_width = (float)num_probes_per_obj*spacing_between_probes;
 bool isMine;
+float max_radius = 0.15; // [m] = 15cm
 
-int num_targets = target_centers.size();
+int num_targets = target_x.size();
 int current_target_id = 0;
 int sampling_point_index = 0;
 bool sampling_points_generated = false;
@@ -53,6 +54,7 @@ bool probes_initialized = false;
 bool probe_init_cmd_sent = false;
 bool probe_insert_cmd_sent = false;
 bool probe_insertion_complete = false;
+bool demo_complete = false;
 
 // publishers
 ros::Publisher probe_contact_pub;
@@ -65,6 +67,13 @@ ros::Subscriber probe_contact_sub;
 ros::Subscriber gantry_status_sub;
 
 std::vector<geometry_msgs::PointStamped> contact_points;
+
+struct point2D { float x, y; };
+
+struct circle {
+	point2D center;
+	float rad;
+};
 
 // Helper functions
 
@@ -88,35 +97,81 @@ std::vector<float> generateSamplingPoints(float center){
 
 // Shape classification functions
 
-bool classify()
+float calcRadius(point2D& cc, std::vector<point2D>& points)
 {
+	float rHat = 0;
+	float dx, dy;
+	int numPoints = points.size();
+	for (int i = 0; i<numPoints; i++){
+		dx = points[i].x - cc.x;
+		dy = points[i].y - cc.y;
+		rHat += sqrt(dx*dx + dy*dy);
+	}
+	return rHat / numPoints;
+}
 
+point2D circumcenter(const std::vector<point2D>& points)
+{
+	float pIx = points[0].x;
+	float pIy = points[0].y;
+	float pJx = points[1].x;
+	float pJy = points[1].y;
+	float pKx = points[2].x;
+	float pKy = points[2].y;
+
+	point2D dIJ, dJK, dKI;
+	dIJ.x = pJx - pIx;
+	dIJ.y = pJy - pIy;
+
+	dJK.x = pKx - pJx;
+	dJK.y = pKy - pJy;
+
+	dKI.x = pIx - pKx;
+	dKI.y = pIy - pKy;
+
+	float sqI = pIx * pIx + pIy * pIy;
+	float sqJ = pJx * pJx + pJy * pJy;
+	float sqK = pKx * pKx + pKy * pKy;
+
+	float det = dJK.x * dIJ.y - dIJ.x * dJK.y;
+	point2D cc;
+
+	if (abs(det) < 1.0e-10)
+	{
+		cc.x=0;
+		cc.y=0;
+	}
+
+	cc.x = (sqI * dJK.y + sqJ * dKI.y + sqK * dIJ.y) / (2 * det);
+	cc.y = -(sqI * dJK.x + sqJ * dKI.x + sqK * dIJ.x) / (2 * det);
+
+	return cc;
 }
 
 circle calcCircle(std::vector<point2D>& points)
 {
-  circle circle;
-  point2D cc;
-  float sigX = 0;
-  float sigY = 0;
-  int q = 0;
+	circle circle;
+	point2D cc;
+	float sigX = 0;
+	float sigY = 0;
+	int q = 0;
 
-  int n = points.size();
+	int n = points.size();
 
   for (int i = 0;i<n-2;i++){ // go through all the combinations of points
-    for (int j = i+1;j<n-1;j++){
-      for (int k = j+1;k<n;k++){
-        // create a vector of three points
-        std::vector<point2D> threePoints;
-        threePoints.push_back(points[i]);
-        threePoints.push_back(points[j]);
-        threePoints.push_back(points[k]);
-        cc = circumcenter(threePoints);
-        sigX += cc.x;
-        sigY += cc.y;
-        q++;
-      }
-    }
+	for (int j = i+1;j<n-1;j++){
+		for (int k = j+1;k<n;k++){
+		// create a vector of three points
+			std::vector<point2D> threePoints;
+			threePoints.push_back(points[i]);
+			threePoints.push_back(points[j]);
+			threePoints.push_back(points[k]);
+			cc = circumcenter(threePoints);
+			sigX += cc.x;
+			sigY += cc.y;
+			q++;
+		}
+	}
   }
   // if (q==0)
   //   disp('All points aligned')
@@ -128,56 +183,16 @@ circle calcCircle(std::vector<point2D>& points)
   return circle;
 }
 
-point2D circumcenter(const std::vector<point2D>& points)
+circle classify(const std::vector<geometry_msgs::PointStamped>& pts3d)
 {
-  float pIx = points[0].x;
-  float pIy = points[0].y;
-  float pJx = points[1].x;
-  float pJy = points[1].y;
-  float pKx = points[2].x;
-  float pKy = points[2].y;
-
-  point2D dIJ, dJK, dKI;
-  dIJ.x = pJx - pIx;
-  dIJ.y = pJy - pIy;
-
-  dJK.x = pKx - pJx;
-  dJK.y = pKy - pJy;
-
-  dKI.x = pIx - pKx;
-  dKI.y = pIy - pKy;
-
-  float sqI = pIx * pIx + pIy * pIy;
-  float sqJ = pJx * pJx + pJy * pJy;
-  float sqK = pKx * pKx + pKy * pKy;
-
-  float det = dJK.x * dIJ.y - dIJ.x * dJK.y;
-  point2D cc;
-
-  if (abs(det) < 1.0e-10)
-  {
-    cc.x=0;
-    cc.y=0;
-  }
-
-
-  cc.x = (sqI * dJK.y + sqJ * dKI.y + sqK * dIJ.y) / (2 * det);
-  cc.y = -(sqI * dJK.x + sqJ * dKI.x + sqK * dIJ.x) / (2 * det);
-
-  return cc;
-}
-
-float calcRadius(point2D& cc, std::vector<point2D>& points)
-{
-  float rHat = 0;
-  float dx, dy;
-  int numPoints = points.size();
-  for (int i = 0; i<numPoints; i++){
-    dx = points[i].x - cc.x;
-    dy = points[i].y - cc.y;
-    rHat += sqrt(dx*dx + dy*dy);
-  }
-  return rHat / numPoints;
+	std::vector<point2D> pts2d;
+	float x,y;
+	for(int i = 0; i < pts3d.size(); i++){
+		x = pts3d.at(i).point.x; // project 3d points to 2d
+		y = pts3d.at(i).point.y;
+		pts2d.push_back({x,y});
+	}
+	return calcCircle(pts2d);
 }
 
 // Callback functions
@@ -258,21 +273,23 @@ void sendProbeInsertCmd(){
 
 void printResults(){
 	for (int i = 0; i<num_targets; i++){
-		// std::vector<float> 
+		std::vector<geometry_msgs::PointStamped> pts; // (should overwrite with every new i)
 		for (int j = 0; j<num_probes_per_obj; j++){
-
+			pts.push_back(contact_points.at(num_probes_per_obj*i+j));
 		}
-		isMine = classify();
+		circle circle = classify(pts);
+		(circle.rad<=max_radius) ? isMine = true : isMine = false;
 		if(isMine)
 		{
-			float dist = 2;
-			ROS_INFO("Object %d is a landmine. Center is %fcm away from actual location.", i+1, dist);
+			float dist = sqrt(pow(target_x.at(i)-circle.center.x,2)+pow(target_y.at(i)-circle.center.y,2));
+			ROS_INFO("Object %d is a landmine. Calculated center is %fcm away from actual location.", i+1, dist);
 		}
 		else
 		{
 			ROS_INFO("Object %d is not a landmine.", i+1);
 		}
 	}
+    demo_complete = true;
 }
 
 int main(int argc, char **argv)
@@ -287,7 +304,7 @@ int main(int argc, char **argv)
 	probe_contact_pub = n.advertise<geometry_msgs::PointStamped>("probe_contact_send", 1000);
 	gantry_cmd_pub = n.advertise<std_msgs::Int32MultiArray>("gantry_cmd_send", 1000);
 
-  	// subscribers
+	// subscribers
 	probe_status_sub = n.subscribe("probe_status_reply", 1000, probeStatusClbk);
 	probe_contact_sub = n.subscribe("probe_contact_reply", 1000, probeContactClbk);
 	gantry_status_sub = n.subscribe("gantry_status_reply", 1000, gantryStatusClbk);
@@ -343,7 +360,7 @@ int main(int argc, char **argv)
 				case false: // not all targets have been inspected
 				if(!sampling_points_generated)
 				{
-					sampling_points = generateSamplingPoints(target_centers[current_target_id]); // create a vector of points around the current target center
+					sampling_points = generateSamplingPoints(target_x[current_target_id]); // create a vector of points around the current target center
 				}
 				if(!gantry_pos_cmd_sent) // if you haven't told the gantry to move to the next position
 				{ 
@@ -375,7 +392,14 @@ int main(int argc, char **argv)
 				} 
 				break;
 				case true: // all targets have been inspected
-				printResults();
+                switch(demo_complete){
+                    case false:
+                    printResults();
+                    case true:
+                    break;
+                    default:
+                    break;
+                }
 				break;
 				default:
 				break;
