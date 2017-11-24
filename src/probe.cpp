@@ -30,7 +30,7 @@ int num_probes_per_obj = 6;
 float spacing_between_probes = 0.02; // [m], = 2cm
 int num_targets = target_centers.size();
 int current_target_id = 0;
-bool target_probing_complete = false;
+bool inspection_complete = false;
 
 float probe_carriage_pos;
 float gantry_carriage_pos;
@@ -39,30 +39,19 @@ float gantry_carriage_pos;
 std::vector<int> gantry_initialize_cmd = {1,0};
 int gantry_idle_cmd[] = {0,0};
 
-int gantry_initialize_cmd_received[] = {1,0,-1};
-int gantry_initialization_complete[] = {1,1,-1};
-int gantry_idle_cmd_received[] = 	    {0,1,-1};
-int gantry_pos_cmd_received[] =        {3,1,0};
-int gantry_pos_cmd_reached[] =         {3,1,1};
-
-
 int probe_idle_cmd = 1;
 int probe_insert_cmd = 2;
 int probe_initialize_cmd = 3;
 
-int probe_initialize_cmd_received[] = {3,0,-1};
-int probe_initialization_complete[] = {3,1,-1};
-int probe_idle_cmd_received[] = 	   {1,1,-1};
-int probe_insert_cmd_received[]=     {2,1,0};
-int probe_insertion_complete[] =      {2,1,1};
-
+// initialization flags
 bool initialized = false; // both probes and gantry
 bool gantry_initialized = false;
 bool probes_initialized = false;
 bool gantry_init_cmd_sent = false;
 bool probe_init_cmd_sent = false;
-
-bool inspection_complete = false;
+bool gantry_pos_cmd_sent = false;
+bool gantry_pos_cmd_reached = false;
+bool probe_insert_cmd_sent = false;
 
 // publishers
 ros::Publisher probe_contact_pub;
@@ -112,8 +101,7 @@ void probeContactClbk(const std_msgs::Int32MultiArray& msg){
 void gantryStatusClbk(const std_msgs::Int32MultiArray& msg){
 	gantry_mode = msg.data[0]; // first entry is the reported state
 	gantry_carriage_pos = (float)msg.data[1]/1000.0; // second entry is the gantry carriage position [mm->m]
-	// gantry_pos_cmd_reached = msg.data[2]; // third entry is the status of whether or not the command position has been reached
-	// gantry_init_complete = msg.data[3]; // fourth entry is whether or not the initialization is complete
+	gantry_pos_cmd_reached = msg.data[2]; // third entry is the status of whether or not the command position has been reached
 	gantry_carriage.setOrigin( tf::Vector3(0,0.1+gantry_carriage_pos,0)); // update origin of gantry carriage coordinate frame
 	br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform
 	gantry_initialized = (bool)msg.data[1];
@@ -129,6 +117,10 @@ void initializeProbes(){
 	probe_send_msg.data = probe_initialize_cmd;
 	probe_cmd_pub.publish(probe_send_msg);
 	probe_init_cmd_sent = true;
+}
+
+void printResults(){
+
 }
 
 int main(int argc, char **argv)
@@ -177,21 +169,49 @@ int main(int argc, char **argv)
 	while (ros::ok())
 	{
 		switch(initialized){
-			case false:
-			if(!gantry_init_cmd_sent){
-				initializeGantry();
+			case false: // if either one of the gantry or probes has not completed initialization
+			if(!gantry_init_cmd_sent) // if you haven't sent the command to initialize the gantry
+			{ 
+				initializeGantry(); // send the command
 			}
-			else if (gantry_initialized){
-				if(!probe_init_cmd_sent){
-					initializeProbes();
+			else if (gantry_initialized){ // this becomes true when gantry initialization flag is true
+				if(!probe_init_cmd_sent) // if you haven't sent the command to initialize the probes
+				{ 
+					initializeProbes(); // send the command
 				}
-				else if(probes_initialized){
-					initialized = true;
+				else if(probes_initialized) // this becomes true when probe initialization flag is true
+				{ 
+					initialized = true; // initialization of both is complete
 				}
 			}
 			break;
-			case true:
+			case true: // when both probes and gantry have been initialized
+			switch(inspection_complete){
+				case false: // not all targets have been inspected
+				if(!gantry_pos_cmd_sent){ // if you haven't told the gantry to move to the next position
+					gantry_send_msg.data[0] = 3; // change it to position mode
+					gantry_send_msg.data[1] = (int)(target_centers[current_target_id]*1000); // input the position [mm]
+					gantry_cmd_pub.publish(gantry_send_msg); // send the message
+					gantry_pos_cmd_sent = true; // change the flag
+				}
+				if(gantry_pos_cmd_reached){ // when you've reached the desired position
+					if(!probe_insert_cmd_sent){ // if you haven't told the probes to insert
+						probe_send_msg.data[0] = 2; // change it to probe mode
+						probe_cmd_pub.publish(probe_send_msg); // send the message
+						probe_insert_cmd_sent = true; // change the flag
+					}
+				}
 
+				if(current_target_id==num_targets-1) inspection_complete = true; // num_targets-1 because current_target_id starts at 0
+				break;
+				case true: // all targets have been inspected
+				printResults();
+				break;
+				default:
+				break;
+			}
+			break;
+			default:
 			break;
 		}
 
@@ -205,103 +225,3 @@ int main(int argc, char **argv)
 }
 
 //rosrun rosserial_python serial_node.py _baud:=115200 _port:=/dev/serial/by-id/usb-Arduino_Srl_Arduino_Uno_8543130373635161B1C0-if00
-
-
-		// if(ros::Time::now().toSec()-delay_before_start>start_time){
-		// 	start_routine = true; // include a buffer between booting up system and the start of the routine
-		// }
-
-		// if(start_routine){
-			// init gantry
-			// 
-		// }
-
-			// switch(gantry_mode){
-			// 	case 0:
-			// 	gantry_cmd = 1; // Initialize
-			// 	break;
-			// 	case 1:
-			// 	break;
-			// 	case 2: // should not enter this mode during probing test
-			// 	break;
-			// 	case 3:
-			// 	break;
-
-			// 	default:
-			// 	break;	
-			// }
-
-			// switch(probe_mode){
-			// 	case 0:
-			// 	if (gantry_init_complete==0){ // if gantry initialization is not complete
-			// 		break; // do nothing
-			// 	}
-			// 	else if (gantry_init_complete==1){ // if gantry initialization is complete
-			// 		probe_cmd = 3; // Calibrate
-			// 	}
-			// 	break;
-			// 	case 1:
-			// 	if (probe_init_complete==0){ // if probe initialization is not complete
-			// 		break; // do nothing
-			// 	}
-			// 	else if (probe_init_complete==1){ // if gantry initialization is complete
-			// 		probe_cmd = 0; // Return to home and wait for gantry to move to first probing position
-			// 	}
-			// 	break;
-			// 	case 2:
-			// 	break;
-			// 	case 3:
-			// 	if(current_target_id<num_targets){
-			// 	// gantry_cmd = GantryCmd::Position;
-			// 	} else {
-			// 	// gantry_cmd = GantryCmd::Home;
-			// 	}
-			// 	current_target_id++;
-			// 	break;
-			// 	default:
-			// 	break;	
-			// }
-
-			// switch(probe_cmd){
-			// 	case 0:
-			// // probe_cmd_send.data = "Home";
-			// // probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
-			// 	break;
-			// 	case 1:
-			// // probe_mode_cmd_msg.data = "Initialize";
-			// // probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
-			// 	break;
-			// 	case 2:
-			// // probe_mode_cmd_msg.data = "Probe";
-			// // probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
-			// 	break;
-			// 	case 3:
-			// // probe_mode_cmd_msg.data = "Stop";
-			// // probe_mode_cmd_pub.publish(probe_mode_cmd_msg);
-			// 	break;
-			// 	default:
-			// 	break;					
-			// }
-
-			// switch(gantry_cmd){
-			// 	case 0:
-			// // gantry_mode_cmd_msg.data = "Home";
-			// // gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
-			// 	break;
-			// 	case 1:
-			// // gantry_mode_cmd_msg.data = "Initialize";
-			// // gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
-			// 	break;
-			// 	case 2:
-			// // gantry_mode_cmd_msg.data = "Position";
-			// // gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
-			// // gantry_pos_cmd_msg.data = target_centers[current_target_id];
-			// // gantry_pos_cmd_pub.publish(gantry_pos_cmd_msg);
-			// 	break;
-			// 	case 3:
-			// // gantry_mode_cmd_msg.data = "Stop";
-			// // gantry_mode_cmd_pub.publish(gantry_mode_cmd_msg);
-			// 	break;
-			// 	default:
-			// 	break;	
-			// }
