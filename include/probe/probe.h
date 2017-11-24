@@ -17,6 +17,9 @@ public:
 	~Probe();
 
 private:
-
+	float probe_encoder_count_per_rev = 12;
+	float probe_gear_ratio = 27;
+	float probe_lead = 0.008; // [m]
+	
 };
 
