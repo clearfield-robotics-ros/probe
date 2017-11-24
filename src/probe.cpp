@@ -14,16 +14,19 @@ tf::Transform probe_rail;
 tf::Transform probe_tip;
 
 // probing parameters
-std::vector<double> target_centers = {0.2, 0.3, 0.4, 0.5, 0.6, 0.7};
+std::vector<double> target_x = {0.2, 0.3, 0.4, 0.5, 0.6, 0.7};
+std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3, 0.3, 0.3};
 int num_probes_per_obj = 5;
 float spacing_between_probes = 0.02; // [m] = 2cm
 float sample_width = (float)num_probes_per_obj*spacing_between_probes;
-std::vector<bool> isMine;
+bool isMine;
 
 int num_targets = target_centers.size();
 int current_target_id = 0;
 int sampling_point_index = 0;
-bool inspection_complete = false;
+bool sampling_points_generated = false;
+bool indiv_inspection_complete = false;
+bool full_inspection_complete = false;
 
 // locations of gantry and probe carriages
 float probe_carriage_pos;
@@ -40,15 +43,16 @@ int gantry_mode = 0; // idle
 
 // initialization flags
 bool both_initialized = false; // both probes and gantry
+
 bool gantry_initialized = false;
-bool probes_initialized = false;
 bool gantry_init_cmd_sent = false;
-bool probe_init_cmd_sent = false;
-bool probe_insert_cmd_sent = false;
-bool probe_insertion_complete = false;
 bool gantry_pos_cmd_sent = false;
 bool gantry_pos_cmd_reached = false;
 
+bool probes_initialized = false;
+bool probe_init_cmd_sent = false;
+bool probe_insert_cmd_sent = false;
+bool probe_insertion_complete = false;
 
 // publishers
 ros::Publisher probe_contact_pub;
@@ -72,13 +76,108 @@ float calculateProbeExtension(float encoder_counts){
 }
 
 std::vector<float> generateSamplingPoints(float center){
-	std::vector<float> sampling_points;
+	std::vector<float> pts;
 	float first_sample_point = center - sample_width/2;
 	for(int i = 0; i<num_probes_per_obj; i++){
 		float x = first_sample_point+spacing_between_probes*i;
-		sampling_points.push_back(x);
+		pts.push_back(x);
 	}
-	return sampling_points;
+	sampling_points_generated = true;
+	return pts;
+}
+
+// Shape classification functions
+
+bool classify()
+{
+
+}
+
+circle calcCircle(std::vector<point2D>& points)
+{
+  circle circle;
+  point2D cc;
+  float sigX = 0;
+  float sigY = 0;
+  int q = 0;
+
+  int n = points.size();
+
+  for (int i = 0;i<n-2;i++){ // go through all the combinations of points
+    for (int j = i+1;j<n-1;j++){
+      for (int k = j+1;k<n;k++){
+        // create a vector of three points
+        std::vector<point2D> threePoints;
+        threePoints.push_back(points[i]);
+        threePoints.push_back(points[j]);
+        threePoints.push_back(points[k]);
+        cc = circumcenter(threePoints);
+        sigX += cc.x;
+        sigY += cc.y;
+        q++;
+      }
+    }
+  }
+  // if (q==0)
+  //   disp('All points aligned')
+  // end
+  cc.x = sigX/q;
+  cc.y = sigY/q;
+  circle.center = cc;
+  circle.rad = calcRadius(cc, points);
+  return circle;
+}
+
+point2D circumcenter(const std::vector<point2D>& points)
+{
+  float pIx = points[0].x;
+  float pIy = points[0].y;
+  float pJx = points[1].x;
+  float pJy = points[1].y;
+  float pKx = points[2].x;
+  float pKy = points[2].y;
+
+  point2D dIJ, dJK, dKI;
+  dIJ.x = pJx - pIx;
+  dIJ.y = pJy - pIy;
+
+  dJK.x = pKx - pJx;
+  dJK.y = pKy - pJy;
+
+  dKI.x = pIx - pKx;
+  dKI.y = pIy - pKy;
+
+  float sqI = pIx * pIx + pIy * pIy;
+  float sqJ = pJx * pJx + pJy * pJy;
+  float sqK = pKx * pKx + pKy * pKy;
+
+  float det = dJK.x * dIJ.y - dIJ.x * dJK.y;
+  point2D cc;
+
+  if (abs(det) < 1.0e-10)
+  {
+    cc.x=0;
+    cc.y=0;
+  }
+
+
+  cc.x = (sqI * dJK.y + sqJ * dKI.y + sqK * dIJ.y) / (2 * det);
+  cc.y = -(sqI * dJK.x + sqJ * dKI.x + sqK * dIJ.x) / (2 * det);
+
+  return cc;
+}
+
+float calcRadius(point2D& cc, std::vector<point2D>& points)
+{
+  float rHat = 0;
+  float dx, dy;
+  int numPoints = points.size();
+  for (int i = 0; i<numPoints; i++){
+    dx = points[i].x - cc.x;
+    dy = points[i].y - cc.y;
+    rHat += sqrt(dx*dx + dy*dy);
+  }
+  return rHat / numPoints;
 }
 
 // Callback functions
@@ -158,7 +257,22 @@ void sendProbeInsertCmd(){
 }
 
 void printResults(){
+	for (int i = 0; i<num_targets; i++){
+		// std::vector<float> 
+		for (int j = 0; j<num_probes_per_obj; j++){
 
+		}
+		isMine = classify();
+		if(isMine)
+		{
+			float dist = 2;
+			ROS_INFO("Object %d is a landmine. Center is %fcm away from actual location.", i+1, dist);
+		}
+		else
+		{
+			ROS_INFO("Object %d is not a landmine.", i+1);
+		}
+	}
 }
 
 int main(int argc, char **argv)
@@ -203,6 +317,7 @@ int main(int argc, char **argv)
 	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip"));
 	
+	std::vector<float> sampling_points;
 
 	while (ros::ok())
 	{
@@ -224,14 +339,16 @@ int main(int argc, char **argv)
 			}
 			break;
 			case true: // when both probes and gantry have been initialized
-			switch(inspection_complete){
+			switch(full_inspection_complete){
 				case false: // not all targets have been inspected
-				std::vector<float> sampling_points;
-				sampling_points = generateSamplingPoints(target_centers[current_target_id]);
+				if(!sampling_points_generated)
+				{
+					sampling_points = generateSamplingPoints(target_centers[current_target_id]); // create a vector of points around the current target center
+				}
 				if(!gantry_pos_cmd_sent) // if you haven't told the gantry to move to the next position
 				{ 
 					sendGantryPosCmd(sampling_points[sampling_point_index]); // send the position command
-					sampling_point_index++;
+					sampling_point_index++; // go to the next sampling point
 				}
 				if(gantry_pos_cmd_reached) // when you've reached the desired position
 				{ 
@@ -240,13 +357,22 @@ int main(int argc, char **argv)
 					{ 
 						sendProbeInsertCmd(); // tell the probes to insert
 					}
-					else if(probe_insertion_complete)
+					else if(probe_insertion_complete) // if the probe insertion sequence is complete
 					{
-						
-						current_target_id++;
+						if(sampling_point_index==num_probes_per_obj-1) // if you've done the specified number of probes per object
+						{
+							indiv_inspection_complete = true; // inspection for this object is complete
+							current_target_id++; // move to the next target ID
+							sampling_points_generated = false; // allows new set of sampling points to be generated for next target
+						}
+						gantry_pos_cmd_sent = false; // change the flag
 					}
 				}
-				if(current_target_id==num_targets-1) inspection_complete = true; // num_targets-1 because current_target_id starts at 0
+
+				if(current_target_id==num_targets-1)
+				{
+					full_inspection_complete = true; // num_targets-1 because current_target_id starts at 0
+				} 
 				break;
 				case true: // all targets have been inspected
 				printResults();
