@@ -1,102 +1,18 @@
-#include "ros/ros.h"
-#include "tf/transform_broadcaster.h"
-#include "tf/transform_listener.h"
-#include "std_msgs/Bool.h"
-#include "std_msgs/String.h"
-#include "std_msgs/Float32.h"
-#include "std_msgs/Int32.h"
-#include "std_msgs/Int32MultiArray.h"
-#include "std_msgs/MultiArrayDimension.h"
-#include "std_msgs/MultiArrayLayout.h"
-#include "geometry_msgs/PointStamped.h"
+#include "probe/probe.h"
 
 #define M_PI 3.14159265358979323846
 
-// probing parameters
-std::vector<double> target_x = {0.2, 0.3, 0.4, 0.5, 0.6, 0.7}; // [m]
-std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3, 0.3, 0.3};
-std::vector<bool> isMine =     {1, 1, 1, 0, 0, 0}; // 1 if mine, 0 if non-mine
-int num_probes_per_obj = 5;
-float spacing_between_probes = 0.02; // [m] = 2cm
-float sample_width = num_probes_per_obj*spacing_between_probes;
-float max_radius = 0.15; // [m] = 15cm
-
-int num_targets = target_x.size();
-int current_target_id = 0;
-int sampling_point_index = 0;
-bool sampling_points_generated = false;
-bool indiv_inspection_complete = false;
-bool full_inspection_complete = false;
-
-// locations of gantry and probe carriages
-float probe_carriage_pos;
-float gantry_carriage_pos;
-
-// standard commands
-int probe_idle_cmd =            1;
-int probe_insert_cmd =          2;
-int probe_initialize_cmd =      3;
-
-// initialize modes
-int probe_mode =                1; // idle
-int gantry_mode =               0; // idle
-
-// initialization flags
-bool both_initialized =         false; // both probes and gantry
-
-bool gantry_initialized =       false;
-bool gantry_init_cmd_sent =     false;
-bool gantry_pos_cmd_sent =      false;
-bool gantry_pos_cmd_reached =   false;
-
-bool probes_initialized =       false;
-bool probe_init_cmd_sent =      false;
-bool probe_insert_cmd_sent =    false;
-bool probe_cycle_complete =     false;
-bool demo_complete =            false;
-
-// messages
-std_msgs::Int32 probe_send_msg;
-std_msgs::Int32MultiArray gantry_send_msg;
-
-// publishers
-ros::Publisher probe_contact_pub;
-ros::Publisher probe_cmd_pub;
-ros::Publisher gantry_cmd_pub;
-
-// subscribers
-ros::Subscriber probe_status_sub;
-ros::Subscriber probe_contact_sub;
-ros::Subscriber gantry_status_sub;
-
-// transforms 
-static tf::TransformBroadcaster br;
-tf::TransformListener probe_listener;
-
-tf::Transform gantry;
-tf::Transform gantry_carriage;
-tf::Transform probe_rail;
-tf::Transform probe_tip;
-
-std::vector<geometry_msgs::PointStamped> contact_points;
-
-struct point2D { float x, y; };
-
-struct circle {
-    point2D center;
-    float rad;
-};
 
 // Helper functions
 
-float calculateProbeExtension(float encoder_counts){
+float Probe::calculateProbeExtension(float encoder_counts){
 	float probe_encoder_count_per_rev = 12;
 	float probe_gear_ratio = 27;
 	float probe_lead = 0.008; // [m]
 	return encoder_counts*probe_lead/(probe_gear_ratio*probe_encoder_count_per_rev);
 }
 
-std::vector<float> generateSamplingPoints(float center){
+std::vector<float> Probe::generateSamplingPoints(float center){
 	std::vector<float> pts;
 	float first_sample_point = center - sample_width/2;
 	for(int i = 0; i<num_probes_per_obj; i++){
@@ -109,7 +25,7 @@ std::vector<float> generateSamplingPoints(float center){
 
 // Shape classification functions
 
-float calcRadius(point2D& cc, std::vector<point2D>& points)
+float Probe::calcRadius(point2D& cc, std::vector<point2D>& points)
 {
 	float rHat = 0;
 	float dx, dy;
@@ -122,7 +38,7 @@ float calcRadius(point2D& cc, std::vector<point2D>& points)
 	return rHat / numPoints;
 }
 
-point2D circumcenter(const std::vector<point2D>& points)
+Probe::point2D Probe::circumcenter(const std::vector<point2D>& points)
 {
 	float pIx = points[0].x;
 	float pIy = points[0].y;
@@ -160,7 +76,7 @@ point2D circumcenter(const std::vector<point2D>& points)
 	return cc;
 }
 
-circle calcCircle(std::vector<point2D>& points)
+Probe::circle Probe::calcCircle(std::vector<point2D>& points)
 {
 	circle circle;
 	point2D cc;
@@ -171,31 +87,28 @@ circle calcCircle(std::vector<point2D>& points)
 	int n = points.size();
 
   for (int i = 0;i<n-2;i++){ // go through all the combinations of points
-     for (int j = i+1;j<n-1;j++){
-      for (int k = j+1;k<n;k++){
-		// create a vector of three points
-       std::vector<point2D> threePoints;
-       threePoints.push_back(points[i]);
-       threePoints.push_back(points[j]);
-       threePoints.push_back(points[k]);
-       cc = circumcenter(threePoints);
-       sigX += cc.x;
-       sigY += cc.y;
-       q++;
-   }
-}
-}
-  // if (q==0)
-  //   disp('All points aligned')
-  // end
-cc.x = sigX/q;
-cc.y = sigY/q;
-circle.center = cc;
-circle.rad = calcRadius(cc, points);
-return circle;
+  	for (int j = i+1;j<n-1;j++){
+  		for (int k = j+1;k<n;k++){	// create a vector of three points
+  			std::vector<point2D> threePoints;
+  			threePoints.push_back(points[i]);
+  			threePoints.push_back(points[j]);
+  			threePoints.push_back(points[k]);
+  			cc = circumcenter(threePoints);
+  			sigX += cc.x;
+  			sigY += cc.y;
+  			q++;
+  		}
+  	}
+  }
+
+  cc.x = sigX/q;
+  cc.y = sigY/q;
+  circle.center = cc;
+  circle.rad = calcRadius(cc, points);
+  return circle;
 }
 
-circle classify(const std::vector<geometry_msgs::PointStamped>& pts3d)
+Probe::circle Probe::classify(const std::vector<geometry_msgs::PointStamped>& pts3d)
 {
 	std::vector<point2D> pts2d;
 	float x,y;
@@ -207,53 +120,21 @@ circle classify(const std::vector<geometry_msgs::PointStamped>& pts3d)
 	return calcCircle(pts2d);
 }
 
-// Callback functions
 
-void probeStatusClbk(const std_msgs::Int32MultiArray& msg){
-	probe_mode = msg.data[0]; // first entry is the reported state
-	probe_carriage_pos = calculateProbeExtension((float)msg.data[2]); // second entry is the probe carriage position [mm]
-	probe_tip.setOrigin( tf::Vector3(0,0.4+probe_carriage_pos,0)); // update origin of probe tip coordinate frame [m]
-	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
-	probes_initialized = (bool)msg.data[1];
-	probe_cycle_complete = (bool)msg.data[2];
-}
-
-void probeContactClbk(const std_msgs::Int32MultiArray& msg){
-	probe_carriage_pos = calculateProbeExtension((float)msg.data[3]); // second entry is the probe carriage position [mm]
-	probe_tip.setOrigin( tf::Vector3(0,0.4+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
-	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
-	tf::StampedTransform probe_tf;
-	probe_listener.lookupTransform("probe_tip","base_link",ros::Time(0),probe_tf);
-	geometry_msgs::PointStamped cp; // single contact point (cp)
-	tf::Vector3 probe_tip_origin;
-	probe_tip_origin = probe_tf.getOrigin();
-	cp.point.x = probe_tip_origin.x();
-	cp.point.y = probe_tip_origin.y();
-	cp.point.z = probe_tip_origin.z();
-	probe_contact_pub.publish(cp); // publish to save in rosbag
-	contact_points.push_back(cp); // save into vector for internal processing
-}
-
-void gantryStatusClbk(const std_msgs::Int32MultiArray& msg){
-	gantry_mode = msg.data[0]; // first entry is the reported state
-	gantry_initialized = (bool)msg.data[1];
-	gantry_pos_cmd_reached = (bool)msg.data[2]; // third entry is the status of whether or not the command position has been reached
-    gantry_carriage_pos = (float)msg.data[3]/1000.0; // second entry is the gantry carriage position [mm->m]
-    gantry_carriage.setOrigin( tf::Vector3(0,0.1+gantry_carriage_pos,0)); // update origin of gantry carriage coordinate frame
-    br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
-}
 
 // Initialization functions
 
-void initializeGantry(){
+void Probe::initializeGantry(){
 	gantry_send_msg.data.clear(); // flush out previous data
-	gantry_send_msg.data[0] = 1; // change it to initialize mode
-	gantry_send_msg.data[1] = 0; // input the position [mm]
+
+	gantry_send_msg.data.push_back(1); // change it to initialize mode
+	gantry_send_msg.data.push_back(0); // change it to initialize mode
+
 	gantry_cmd_pub.publish(gantry_send_msg);
 	gantry_init_cmd_sent = true;
 }
 
-void initializeProbes(){
+void Probe::initializeProbes(){
 	probe_send_msg.data = probe_initialize_cmd;
 	probe_cmd_pub.publish(probe_send_msg);
 	probe_init_cmd_sent = true;
@@ -261,29 +142,29 @@ void initializeProbes(){
 
 // Command functions
 
-void sendGantryPosCmd(float pos){
+void Probe::sendGantryPosCmd(float pos){
 	gantry_send_msg.data.clear(); // flush out previous data
-	gantry_send_msg.data[0] = 3; // change it to position mode
-	gantry_send_msg.data[1] = (int)(pos*1000); // input the position [mm]
+	gantry_send_msg.data.push_back(1); // safe to move
+	gantry_send_msg.data.push_back((int)(pos*1000)); // input the position [mm]
 	gantry_cmd_pub.publish(gantry_send_msg); // send the message
 	gantry_pos_cmd_sent = true; // change the flag
 }
 
-void sendGantryIdleCmd(){
+void Probe::sendGantryIdleCmd(){
 	gantry_send_msg.data.clear(); // flush out previous data
-	gantry_send_msg.data[0] = 0; // change it to position mode
-	gantry_send_msg.data[1] = 0; // input the position [mm]
+	gantry_send_msg.data.push_back(0); // not safe to move
+	gantry_send_msg.data.push_back(0); // input the position [mm]
 	gantry_cmd_pub.publish(gantry_send_msg); // send the message
 	// gantry_idle_cmd_sent = true; // change the flag
 }
 
-void sendProbeInsertCmd(){
-	probe_send_msg.data = 2; // change it to probe mode
+void Probe::sendProbeInsertCmd(){
+	probe_send_msg.data = probe_insert_cmd; // change it to probe mode
 	probe_cmd_pub.publish(probe_send_msg); // send the message
 	probe_insert_cmd_sent = true; // change the flag
 }
 
-void printResults(){
+void Probe::printResults(){
     int mine_correct = 0;
     int mine_incorrect = 0;
     int nonmine_correct = 0;
@@ -316,96 +197,87 @@ void printResults(){
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "probe");
-    ros::NodeHandle n;
-
+	Probe p;
 	ros::Rate loop_rate(10);
 
-	// publishers
-	probe_cmd_pub = n.advertise<std_msgs::Int32>("probe_cmd_send", 1000);
-	probe_contact_pub = n.advertise<geometry_msgs::PointStamped>("probe_contact_send", 1000);
-	gantry_cmd_pub = n.advertise<std_msgs::Int32MultiArray>("gantry_cmd_send", 1000);
-
-	// subscribers
-	probe_status_sub = n.subscribe("probe_status_reply", 1000, probeStatusClbk);
-	probe_contact_sub = n.subscribe("probe_contact_reply", 1000, probeContactClbk);
-	gantry_status_sub = n.subscribe("gantry_status_reply", 1000, gantryStatusClbk);
 
 	// initialize transforms
 	// gantry
-	gantry.setOrigin( tf::Vector3(0.2,-0.2,0.4));
-	gantry.setRotation(tf::Quaternion(0,0,0,1));
-	br.sendTransform(tf::StampedTransform(gantry,ros::Time::now(), "base_link", "gantry"));
+	p.gantry.setOrigin( tf::Vector3(0.2,-0.2,0.4));
+	p.gantry.setRotation(tf::Quaternion(0,0,0,1));
+	p.br.sendTransform(tf::StampedTransform(p.gantry,ros::Time::now(), "base_link", "gantry"));
 	
 	// gantry carriage
-	gantry_carriage.setOrigin( tf::Vector3(0,0.1,0));
-	gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
-	br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage"));
+	p.gantry_carriage.setOrigin( tf::Vector3(0,0.1,0));
+	p.gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
+	p.br.sendTransform(tf::StampedTransform(p.gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage"));
 
 	// probe rail
-	probe_rail.setOrigin( tf::Vector3(0,-0.1,-0.2));
+	p.probe_rail.setOrigin( tf::Vector3(0,-0.1,-0.2));
 	tf::Matrix3x3 m_rot;
 	m_rot.setEulerYPR(0, -30*M_PI/180, 0);
 	tf::Quaternion quat; 	// Convert into quaternion
 	m_rot.getRotation(quat);
-	probe_rail.setRotation(tf::Quaternion(quat));
-	br.sendTransform(tf::StampedTransform(probe_rail,ros::Time::now(), "gantry_carriage", "probe_rail"));
+	p.probe_rail.setRotation(tf::Quaternion(quat));
+	p.br.sendTransform(tf::StampedTransform(p.probe_rail,ros::Time::now(), "gantry_carriage", "probe_rail"));
 
 	// probe tip
-	probe_tip.setOrigin( tf::Vector3(0,0.4,0));
-	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
-	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip"));
+	p.probe_tip.setOrigin( tf::Vector3(0,0.4,0));
+	p.probe_tip.setRotation(tf::Quaternion(0,0,0,1));
+	p.br.sendTransform(tf::StampedTransform(p.probe_tip,ros::Time::now(), "probe_rail", "probe_tip"));
 	
 	std::vector<float> sampling_points;
 
 	while (ros::ok())
 	{
-		switch(both_initialized){
+		switch(p.both_initialized){
 			case false: // if either one of the gantry or probes has not completed initialization
-			if(!gantry_init_cmd_sent){ // if you haven't sent the command to initialize the gantry 
-				initializeGantry(); // send the command
-       }
-			else if (gantry_initialized){ // this becomes true when gantry initialization flag is true
-				if(!probe_init_cmd_sent){ // if you haven't sent the command to initialize the probes
-                    sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
-					initializeProbes(); // send the command
+			// if(!p.gantry_init_cmd_sent){ // if you haven't sent the command to initialize the gantry 
+
+			// 	p.initializeGantry(); // send the command
+   //     }
+			if (p.gantry_initialized){ // this becomes true when gantry initialization flag is true // removed else
+				if(!p.probe_init_cmd_sent){ // if you haven't sent the command to initialize the probes
+                    p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
+					p.initializeProbes(); // send the command
 				}
-				else if(probes_initialized){ // this becomes true when probe initialization flag is true
-					both_initialized = true; // initialization of both is complete
+				else if(p.probes_initialized){ // this becomes true when probe initialization flag is true
+					p.both_initialized = true; // initialization of both is complete
 				}
 			}
 			break;
 			case true: // when both probes and gantry have been initialized
-			switch(full_inspection_complete){
+			switch(p.full_inspection_complete){
 				case false: // not all targets have been inspected
-				if(!sampling_points_generated){
-					sampling_points = generateSamplingPoints(target_x[current_target_id]); // create a vector of points around the current target center
+				if(!p.sampling_points_generated){
+					sampling_points = p.generateSamplingPoints(p.target_x[p.current_target_id]); // create a vector of points around the current target center
 				}
-				if(!gantry_pos_cmd_sent){ // if you haven't told the gantry to move to the next position
-					sendGantryPosCmd(sampling_points[sampling_point_index]); // send the position command
-					sampling_point_index++; // go to the next sampling point
+				if(!p.gantry_pos_cmd_sent){ // if you haven't told the gantry to move to the next position
+					p.sendGantryPosCmd(sampling_points[p.sampling_point_index]); // send the position command
+					p.sampling_point_index++; // go to the next sampling point
 				}
-				if(gantry_pos_cmd_reached){ // when you've reached the desired position
-					sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
-					if(!probe_insert_cmd_sent){ // if you haven't told the probes to insert
-						sendProbeInsertCmd(); // tell the probes to insert
+				if(p.gantry_pos_cmd_reached){ // when you've reached the desired position
+					p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
+					if(!p.probe_insert_cmd_sent){ // if you haven't told the probes to insert
+						p.sendProbeInsertCmd(); // tell the probes to insert
              }
-					else if(probe_cycle_complete){ // if a single probe insertion sequence is complete
-						if(sampling_point_index==num_probes_per_obj-1){ // if you've done the specified number of probes per object
-							indiv_inspection_complete = true; // inspection for this object is complete
-							current_target_id++; // move to the next target ID
-							sampling_points_generated = false; // allows new set of sampling points to be generated for next target
+					else if(p.probe_cycle_complete){ // if a single probe insertion sequence is complete
+						if(p.sampling_point_index==p.num_probes_per_obj-1){ // if you've done the specified number of probes per object
+							p.indiv_inspection_complete = true; // inspection for this object is complete
+							p.current_target_id++; // move to the next target ID
+							p.sampling_points_generated = false; // allows new set of sampling points to be generated for next target
 						}
-						gantry_pos_cmd_sent = false; // change the flag
+						p.gantry_pos_cmd_sent = false; // change the flag
 					}
 				}
-				if(current_target_id==num_targets-1){
-					full_inspection_complete = true; // num_targets-1 because current_target_id starts at 0
+				if(p.current_target_id==p.num_targets-1){
+					p.full_inspection_complete = true; // num_targets-1 because current_target_id starts at 0
 				} 
 				break;
 				case true: // all targets have been inspected
-                switch(demo_complete){
+                switch(p.demo_complete){
                     case false:
-                    printResults();
+                    p.printResults();
                     case true: // do nothing
                     break;
                     default:
@@ -427,4 +299,5 @@ int main(int argc, char **argv)
     return 0;
 }
 
-//rosrun rosserial_python serial_node.py _baud:=115200 _port:=/dev/serial/by-id/usb-Arduino_Srl_Arduino_Uno_8543130373635161B1C0-if00
+//rosrun rosserial_python serial_node.py _baud:=115200 _port:=/dev/serial/by-id/usb-Arduino__www.arduino.cc__0043_A4139373630351909060-if00
+// rosrun rosserial_python serial_node.py /dev/ttyACM0
