@@ -1,25 +1,24 @@
-#include <probe/probe.h>
+#include "ros/ros.h"
+#include "tf/transform_broadcaster.h"
+#include "tf/transform_listener.h"
+#include "std_msgs/Bool.h"
+#include "std_msgs/String.h"
+#include "std_msgs/Float32.h"
+#include "std_msgs/Int32.h"
+#include "std_msgs/Int32MultiArray.h"
+#include "std_msgs/MultiArrayDimension.h"
+#include "std_msgs/MultiArrayLayout.h"
+#include "geometry_msgs/PointStamped.h"
 
 #define M_PI 3.14159265358979323846
 
-std_msgs::Int32 probe_send_msg;
-std_msgs::Int32MultiArray gantry_send_msg;
-
-static tf::TransformBroadcaster br;
-tf::TransformListener probe_listener;
-
-tf::Transform gantry;
-tf::Transform gantry_carriage;
-tf::Transform probe_rail;
-tf::Transform probe_tip;
-
 // probing parameters
-std::vector<double> target_x = {0.2, 0.3, 0.4, 0.5, 0.6, 0.7};
+std::vector<double> target_x = {0.2, 0.3, 0.4, 0.5, 0.6, 0.7}; // [m]
 std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3, 0.3, 0.3};
+std::vector<bool> isMine =     {1, 1, 1, 0, 0, 0}; // 1 if mine, 0 if non-mine
 int num_probes_per_obj = 5;
 float spacing_between_probes = 0.02; // [m] = 2cm
-float sample_width = (float)num_probes_per_obj*spacing_between_probes;
-bool isMine;
+float sample_width = num_probes_per_obj*spacing_between_probes;
 float max_radius = 0.15; // [m] = 15cm
 
 int num_targets = target_x.size();
@@ -34,27 +33,31 @@ float probe_carriage_pos;
 float gantry_carriage_pos;
 
 // standard commands
-int probe_idle_cmd = 1;
-int probe_insert_cmd = 2;
-int probe_initialize_cmd = 3;
+int probe_idle_cmd =            1;
+int probe_insert_cmd =          2;
+int probe_initialize_cmd =      3;
 
 // initialize modes
-int probe_mode = 1; // idle
-int gantry_mode = 0; // idle
+int probe_mode =                1; // idle
+int gantry_mode =               0; // idle
 
 // initialization flags
-bool both_initialized = false; // both probes and gantry
+bool both_initialized =         false; // both probes and gantry
 
-bool gantry_initialized = false;
-bool gantry_init_cmd_sent = false;
-bool gantry_pos_cmd_sent = false;
-bool gantry_pos_cmd_reached = false;
+bool gantry_initialized =       false;
+bool gantry_init_cmd_sent =     false;
+bool gantry_pos_cmd_sent =      false;
+bool gantry_pos_cmd_reached =   false;
 
-bool probes_initialized = false;
-bool probe_init_cmd_sent = false;
-bool probe_insert_cmd_sent = false;
-bool probe_insertion_complete = false;
-bool demo_complete = false;
+bool probes_initialized =       false;
+bool probe_init_cmd_sent =      false;
+bool probe_insert_cmd_sent =    false;
+bool probe_cycle_complete =     false;
+bool demo_complete =            false;
+
+// messages
+std_msgs::Int32 probe_send_msg;
+std_msgs::Int32MultiArray gantry_send_msg;
 
 // publishers
 ros::Publisher probe_contact_pub;
@@ -66,13 +69,22 @@ ros::Subscriber probe_status_sub;
 ros::Subscriber probe_contact_sub;
 ros::Subscriber gantry_status_sub;
 
+// transforms 
+static tf::TransformBroadcaster br;
+tf::TransformListener probe_listener;
+
+tf::Transform gantry;
+tf::Transform gantry_carriage;
+tf::Transform probe_rail;
+tf::Transform probe_tip;
+
 std::vector<geometry_msgs::PointStamped> contact_points;
 
 struct point2D { float x, y; };
 
 struct circle {
-	point2D center;
-	float rad;
+    point2D center;
+    float rad;
 };
 
 // Helper functions
@@ -159,28 +171,28 @@ circle calcCircle(std::vector<point2D>& points)
 	int n = points.size();
 
   for (int i = 0;i<n-2;i++){ // go through all the combinations of points
-	for (int j = i+1;j<n-1;j++){
-		for (int k = j+1;k<n;k++){
+     for (int j = i+1;j<n-1;j++){
+      for (int k = j+1;k<n;k++){
 		// create a vector of three points
-			std::vector<point2D> threePoints;
-			threePoints.push_back(points[i]);
-			threePoints.push_back(points[j]);
-			threePoints.push_back(points[k]);
-			cc = circumcenter(threePoints);
-			sigX += cc.x;
-			sigY += cc.y;
-			q++;
-		}
-	}
-  }
+       std::vector<point2D> threePoints;
+       threePoints.push_back(points[i]);
+       threePoints.push_back(points[j]);
+       threePoints.push_back(points[k]);
+       cc = circumcenter(threePoints);
+       sigX += cc.x;
+       sigY += cc.y;
+       q++;
+   }
+}
+}
   // if (q==0)
   //   disp('All points aligned')
   // end
-  cc.x = sigX/q;
-  cc.y = sigY/q;
-  circle.center = cc;
-  circle.rad = calcRadius(cc, points);
-  return circle;
+cc.x = sigX/q;
+cc.y = sigY/q;
+circle.center = cc;
+circle.rad = calcRadius(cc, points);
+return circle;
 }
 
 circle classify(const std::vector<geometry_msgs::PointStamped>& pts3d)
@@ -203,11 +215,11 @@ void probeStatusClbk(const std_msgs::Int32MultiArray& msg){
 	probe_tip.setOrigin( tf::Vector3(0,0.4+probe_carriage_pos,0)); // update origin of probe tip coordinate frame [m]
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	probes_initialized = (bool)msg.data[1];
-	probe_insertion_complete = (bool)msg.data[2];
+	probe_cycle_complete = (bool)msg.data[2];
 }
 
 void probeContactClbk(const std_msgs::Int32MultiArray& msg){
-	probe_carriage_pos = calculateProbeExtension((float)msg.data[1]); // second entry is the probe carriage position [mm]
+	probe_carriage_pos = calculateProbeExtension((float)msg.data[3]); // second entry is the probe carriage position [mm]
 	probe_tip.setOrigin( tf::Vector3(0,0.4+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	tf::StampedTransform probe_tf;
@@ -218,17 +230,17 @@ void probeContactClbk(const std_msgs::Int32MultiArray& msg){
 	cp.point.x = probe_tip_origin.x();
 	cp.point.y = probe_tip_origin.y();
 	cp.point.z = probe_tip_origin.z();
-	probe_contact_pub.publish(cp); // publish
-	contact_points.push_back(cp); // save into vector
+	probe_contact_pub.publish(cp); // publish to save in rosbag
+	contact_points.push_back(cp); // save into vector for internal processing
 }
 
 void gantryStatusClbk(const std_msgs::Int32MultiArray& msg){
 	gantry_mode = msg.data[0]; // first entry is the reported state
-	gantry_carriage_pos = (float)msg.data[1]/1000.0; // second entry is the gantry carriage position [mm->m]
-	gantry_carriage.setOrigin( tf::Vector3(0,0.1+gantry_carriage_pos,0)); // update origin of gantry carriage coordinate frame
-	br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform
 	gantry_initialized = (bool)msg.data[1];
 	gantry_pos_cmd_reached = (bool)msg.data[2]; // third entry is the status of whether or not the command position has been reached
+    gantry_carriage_pos = (float)msg.data[3]/1000.0; // second entry is the gantry carriage position [mm->m]
+    gantry_carriage.setOrigin( tf::Vector3(0,0.1+gantry_carriage_pos,0)); // update origin of gantry carriage coordinate frame
+    br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
 }
 
 // Initialization functions
@@ -272,31 +284,40 @@ void sendProbeInsertCmd(){
 }
 
 void printResults(){
-	for (int i = 0; i<num_targets; i++){
+    int mine_correct = 0;
+    int mine_incorrect = 0;
+    int nonmine_correct = 0;
+    int nonmine_incorrect = 0;
+    for (int i = 0; i<num_targets; i++){
 		std::vector<geometry_msgs::PointStamped> pts; // (should overwrite with every new i)
 		for (int j = 0; j<num_probes_per_obj; j++){
 			pts.push_back(contact_points.at(num_probes_per_obj*i+j));
 		}
 		circle circle = classify(pts);
-		(circle.rad<=max_radius) ? isMine = true : isMine = false;
-		if(isMine)
-		{
-			float dist = sqrt(pow(target_x.at(i)-circle.center.x,2)+pow(target_y.at(i)-circle.center.y,2));
-			ROS_INFO("Object %d is a landmine. Calculated center is %fcm away from actual location.", i+1, dist);
-		}
-		else
-		{
-			ROS_INFO("Object %d is not a landmine.", i+1);
-		}
-	}
-    demo_complete = true;
+        bool guess;
+        (circle.rad<=max_radius) ? guess = true : guess = false;
+        if(guess)
+        {
+           float dist = sqrt(pow(target_x.at(i)-circle.center.x,2)+pow(target_y.at(i)-circle.center.y,2));
+           ROS_INFO("Object %d is a landmine. Calculated center is %fcm away from actual location.", i+1, dist);
+           (guess==isMine.at(i)) ? mine_correct++ : mine_incorrect++;
+       }
+       else
+       {
+           ROS_INFO("Object %d is not a landmine.", i+1);
+           (guess==isMine.at(i)) ? nonmine_correct++ : nonmine_incorrect++;
+       }
+   }
+   ROS_INFO("%d out of 3 mines were identified correctly.", mine_correct);
+   ROS_INFO("%d out of 3 non-mines were identified correctly.", nonmine_correct);
+   demo_complete = true;
 }
 
 int main(int argc, char **argv)
 {
-	ros::NodeHandle n;
-
 	ros::init(argc, argv, "probe");
+    ros::NodeHandle n;
+
 	ros::Rate loop_rate(10);
 
 	// publishers
@@ -340,17 +361,15 @@ int main(int argc, char **argv)
 	{
 		switch(both_initialized){
 			case false: // if either one of the gantry or probes has not completed initialization
-			if(!gantry_init_cmd_sent) // if you haven't sent the command to initialize the gantry
-			{ 
+			if(!gantry_init_cmd_sent){ // if you haven't sent the command to initialize the gantry 
 				initializeGantry(); // send the command
-			}
+       }
 			else if (gantry_initialized){ // this becomes true when gantry initialization flag is true
-				if(!probe_init_cmd_sent) // if you haven't sent the command to initialize the probes
-				{ 
+				if(!probe_init_cmd_sent){ // if you haven't sent the command to initialize the probes
+                    sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
 					initializeProbes(); // send the command
 				}
-				else if(probes_initialized) // this becomes true when probe initialization flag is true
-				{ 
+				else if(probes_initialized){ // this becomes true when probe initialization flag is true
 					both_initialized = true; // initialization of both is complete
 				}
 			}
@@ -358,26 +377,20 @@ int main(int argc, char **argv)
 			case true: // when both probes and gantry have been initialized
 			switch(full_inspection_complete){
 				case false: // not all targets have been inspected
-				if(!sampling_points_generated)
-				{
+				if(!sampling_points_generated){
 					sampling_points = generateSamplingPoints(target_x[current_target_id]); // create a vector of points around the current target center
 				}
-				if(!gantry_pos_cmd_sent) // if you haven't told the gantry to move to the next position
-				{ 
+				if(!gantry_pos_cmd_sent){ // if you haven't told the gantry to move to the next position
 					sendGantryPosCmd(sampling_points[sampling_point_index]); // send the position command
 					sampling_point_index++; // go to the next sampling point
 				}
-				if(gantry_pos_cmd_reached) // when you've reached the desired position
-				{ 
+				if(gantry_pos_cmd_reached){ // when you've reached the desired position
 					sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
-					if(!probe_insert_cmd_sent) // if you haven't told the probes to insert
-					{ 
+					if(!probe_insert_cmd_sent){ // if you haven't told the probes to insert
 						sendProbeInsertCmd(); // tell the probes to insert
-					}
-					else if(probe_insertion_complete) // if the probe insertion sequence is complete
-					{
-						if(sampling_point_index==num_probes_per_obj-1) // if you've done the specified number of probes per object
-						{
+             }
+					else if(probe_cycle_complete){ // if a single probe insertion sequence is complete
+						if(sampling_point_index==num_probes_per_obj-1){ // if you've done the specified number of probes per object
 							indiv_inspection_complete = true; // inspection for this object is complete
 							current_target_id++; // move to the next target ID
 							sampling_points_generated = false; // allows new set of sampling points to be generated for next target
@@ -385,9 +398,7 @@ int main(int argc, char **argv)
 						gantry_pos_cmd_sent = false; // change the flag
 					}
 				}
-
-				if(current_target_id==num_targets-1)
-				{
+				if(current_target_id==num_targets-1){
 					full_inspection_complete = true; // num_targets-1 because current_target_id starts at 0
 				} 
 				break;
@@ -395,27 +406,25 @@ int main(int argc, char **argv)
                 switch(demo_complete){
                     case false:
                     printResults();
-                    case true:
+                    case true: // do nothing
                     break;
                     default:
                     break;
                 }
-				break;
-				default:
-				break;
-			}
-			break;
-			default:
-			break;
-		}
+                break;
+                default:
+                break;
+            }
+            break;
+            default:
+            break;
+        }
 
+        ros::spinOnce();
 
-		// ROS_INFO("Probe Cmd: %d --- Probe Mode: %d ------ Gantry Cmd: %d --- Gantry Mode: %d",probe_cmd,probe_mode,gantry_cmd,gantry_mode);
-		ros::spinOnce();
-
-		loop_rate.sleep();
-	}
-	return 0;
+        loop_rate.sleep();
+    }
+    return 0;
 }
 
 //rosrun rosserial_python serial_node.py _baud:=115200 _port:=/dev/serial/by-id/usb-Arduino_Srl_Arduino_Uno_8543130373635161B1C0-if00
