@@ -36,17 +36,20 @@ public:
 
 void probeStatusClbk(const std_msgs::Int16MultiArray& msg){
 	probe_mode = msg.data.at(0); // first entry is the reported state
-	probe_carriage_pos = calculateProbeExtension((float)msg.data.at(2)); // second entry is the probe carriage position [mm]
-	ROS_INFO("%f", probe_carriage_pos);
+	probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
 	probe_tip.setOrigin( tf::Vector3(0,0.4+probe_carriage_pos,0)); // update origin of probe tip coordinate frame [m]
+	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	probes_initialized = (bool)msg.data.at(1);
 	probe_cycle_complete = (bool)msg.data.at(2);
+	ROS_INFO("Probe mode: %d, Initialized: %d, Cycle complete: %d, Carriage pos: %f", probe_mode, probes_initialized, probe_cycle_complete, probe_carriage_pos);
 }
 
 void probeContactClbk(const std_msgs::Int16MultiArray& msg){
-	probe_carriage_pos = calculateProbeExtension((float)msg.data.at(3)); // second entry is the probe carriage position [mm]
+	probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
+	ROS_INFO("%f", probe_carriage_pos);
 	probe_tip.setOrigin( tf::Vector3(0,0.4+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
+	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	tf::StampedTransform probe_tf;
 	probe_listener.lookupTransform("probe_tip","base_link",ros::Time(0),probe_tf);
@@ -61,12 +64,12 @@ void probeContactClbk(const std_msgs::Int16MultiArray& msg){
 }
 
 void gantryStatusClbk(const std_msgs::Int16MultiArray& msg){
-	gantry_mode = msg.data.at(0); // first entry is the reported state
-	gantry_initialized = (bool)msg.data.at(1);
-	gantry_pos_cmd_reached = (bool)msg.data.at(2); // third entry is the status of whether or not the command position has been reached
-    gantry_carriage_pos = (float)msg.data.at(3)/1000.0; // second entry is the gantry carriage position [mm->m]
-    gantry_carriage.setOrigin( tf::Vector3(0,0.1+gantry_carriage_pos,0)); // update origin of gantry carriage coordinate frame
-    br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
+	// gantry_mode = msg.data.at(0); // first entry is the reported state
+	// gantry_initialized = (bool)msg.data.at(1);
+	// gantry_pos_cmd_reached = (bool)msg.data.at(2); // third entry is the status of whether or not the command position has been reached
+ //    gantry_carriage_pos = (float)msg.data.at(3)/1000.0; // second entry is the gantry carriage position [mm->m]
+ //    gantry_carriage.setOrigin( tf::Vector3(0,0.1+gantry_carriage_pos,0)); // update origin of gantry carriage coordinate frame
+ //    br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
 }
 
 struct point2D { float x, y; };
@@ -103,7 +106,7 @@ std::vector<geometry_msgs::PointStamped> contact_points;
 
 // Helper functions
 
-float calculateProbeExtension(float encoder_counts);
+// float calculateProbeExtension(float encoder_counts);
 
 std::vector<float> generateSamplingPoints(float center);
 
