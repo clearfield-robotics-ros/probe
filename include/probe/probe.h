@@ -37,18 +37,20 @@ public:
 void probeStatusClbk(const std_msgs::Int16MultiArray& msg){
 	probe_mode = msg.data.at(0); // first entry is the reported state
 	probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
-	probe_tip.setOrigin( tf::Vector3(0,0.4+probe_carriage_pos,0)); // update origin of probe tip coordinate frame [m]
+	probe_tip.setOrigin( tf::Vector3(0,0.485+probe_carriage_pos,0)); // update origin of probe tip coordinate frame [m]
 	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	probes_initialized = (bool)msg.data.at(1);
 	probe_cycle_complete = (bool)msg.data.at(2);
+	probe_solid_contact = (bool)msg.data.at(4);
 	ROS_INFO("Probe mode: %d, Initialized: %d, Cycle complete: %d, Carriage pos: %f", probe_mode, probes_initialized, probe_cycle_complete, probe_carriage_pos);
 }
 
 void probeContactClbk(const std_msgs::Int16MultiArray& msg){
 	probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
+	probe_solid_contact = (bool)msg.data.at(4);
 	ROS_INFO("%f", probe_carriage_pos);
-	probe_tip.setOrigin( tf::Vector3(0,0.4+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
+	probe_tip.setOrigin( tf::Vector3(0,0.485+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
 	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	tf::StampedTransform probe_tf;
@@ -59,17 +61,19 @@ void probeContactClbk(const std_msgs::Int16MultiArray& msg){
 	cp.point.x = probe_tip_origin.x();
 	cp.point.y = probe_tip_origin.y();
 	cp.point.z = probe_tip_origin.z();
+	ROS_INFO("%f",cp.point.z);
 	probe_contact_pub.publish(cp); // publish to save in rosbag
 	contact_points.push_back(cp); // save into vector for internal processing
 }
 
 void gantryStatusClbk(const std_msgs::Int16MultiArray& msg){
-	// gantry_mode = msg.data.at(0); // first entry is the reported state
-	// gantry_initialized = (bool)msg.data.at(1);
-	// gantry_pos_cmd_reached = (bool)msg.data.at(2); // third entry is the status of whether or not the command position has been reached
- //    gantry_carriage_pos = (float)msg.data.at(3)/1000.0; // second entry is the gantry carriage position [mm->m]
- //    gantry_carriage.setOrigin( tf::Vector3(0,0.1+gantry_carriage_pos,0)); // update origin of gantry carriage coordinate frame
- //    br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
+	gantry_mode = msg.data.at(0); // first entry is the reported state
+	gantry_initialized = (bool)msg.data.at(1);
+	gantry_pos_cmd_reached = (bool)msg.data.at(2); // third entry is the status of whether or not the command position has been reached
+    gantry_carriage_pos = (float)msg.data.at(3)/1000.0; // second entry is the gantry carriage position [mm->m]
+    gantry_carriage.setOrigin( tf::Vector3(0,0.1+gantry_carriage_pos,0)); // update origin of gantry carriage coordinate frame
+	gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
+    br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
 }
 
 struct point2D { float x, y; };
@@ -137,9 +141,9 @@ void sendProbeInsertCmd();
 void printResults();
 
 // probing parameters
-std::vector<double> target_x = {0.2, 0.3, 0.4, 0.5, 0.6, 0.7}; // [m]
-std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3, 0.3, 0.3};
-std::vector<bool> isMine =     {1, 1, 1, 0, 0, 0}; // 1 if mine, 0 if non-mine
+std::vector<double> target_x = {0.3};//{0.2, 0.3, 0.4, 0.5, 0.6, 0.7}; // [m]
+std::vector<double> target_y = {0.3};//{0.3, 0.3, 0.3, 0.3, 0.3, 0.3};
+std::vector<bool> isMine = {1};  //  {1, 1, 1, 0, 0, 0}; // 1 if mine, 0 if non-mine
 int num_probes_per_obj = 5;
 float spacing_between_probes = 0.02; // [m] = 2cm
 float sample_width = num_probes_per_obj*spacing_between_probes;
@@ -177,6 +181,7 @@ bool probes_initialized =       false;
 bool probe_init_cmd_sent =      false;
 bool probe_insert_cmd_sent =    false;
 bool probe_cycle_complete =     false;
+bool probe_solid_contact =      false;
 bool demo_complete =            false;
 
 private:
@@ -192,3 +197,7 @@ private:
   // arr.layout.data_offset = 0;
   // arr.data = (int *)malloc(sizeof(int)*8);
   // arr.data_length = 4;
+
+// <--node pkg="rosserial_python" type="serial_node.py" name="gantry_teensy"-->
+// <--param name="port" value="/dev/serial/by-id/usb-Arduino__www.arduino.cc__0043_A4139373630351909060-if00"/-->
+// <--param name="baud" value="115200"/-->

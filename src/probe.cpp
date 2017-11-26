@@ -199,35 +199,15 @@ int main(int argc, char **argv)
 	ros::init(argc, argv, "probe");
 	Probe p;
 	ros::Rate loop_rate(10);
+	ros::Rate delay(1);
+        delay.sleep();
 
 	while (ros::ok())
 	{
-		p.sendProbeInsertCmd();
-	// 		// initialize transforms
-	// // gantry
-	// p.gantry.setOrigin( tf::Vector3(0.2,-0.2,0.4));
-	// p.gantry.setRotation(tf::Quaternion(0,0,0,1));
-	// p.br.sendTransform(tf::StampedTransform(p.gantry,ros::Time::now(), "base_link", "gantry"));
-	
-	// // gantry carriage
-	// p.gantry_carriage.setOrigin( tf::Vector3(0.3,0,0));
-	// p.gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
-	// p.br.sendTransform(tf::StampedTransform(p.gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage"));
+							// p.initializeProbes(); // send the command
 
-	// // probe rail
-	// p.probe_rail.setOrigin( tf::Vector3(0,-0.1,-0.2));
-	// tf::Matrix3x3 m_rot;
-	// m_rot.setEulerYPR(0,0 , -30*M_PI/180);
-	// tf::Quaternion quat; 	// Convert into quaternion
-	// m_rot.getRotation(quat);
-	// p.probe_rail.setRotation(tf::Quaternion(quat));
-	// p.br.sendTransform(tf::StampedTransform(p.probe_rail,ros::Time::now(), "gantry_carriage", "probe_rail"));
+		// p.sendProbeInsertCmd();
 
-	// // probe tip
-	// p.probe_tip.setOrigin( tf::Vector3(0,0.4,0));
-	// p.probe_tip.setRotation(tf::Quaternion(0,0,0,1));
-	// p.br.sendTransform(tf::StampedTransform(p.probe_tip,ros::Time::now(), "probe_rail", "probe_tip"));
-	
 		// switch(p.both_initialized){
 		// 	case false: // if either one of the gantry or probes has not completed initialization
 		// 	// if(!p.gantry_init_cmd_sent){ // if you haven't sent the command to initialize the gantry 
@@ -235,20 +215,27 @@ int main(int argc, char **argv)
 		// 	// 	p.initializeGantry(); // send the command
   //  //     }
 		// 	if (p.gantry_initialized){ // this becomes true when gantry initialization flag is true // removed else
-		// 		if(!p.probe_init_cmd_sent){ // if you haven't sent the command to initialize the probes
-  //                   p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
-		// 			p.initializeProbes(); // send the command
-		// 		}
-		// 		else if(p.probes_initialized){ // this becomes true when probe initialization flag is true
-		// 			p.both_initialized = true; // initialization of both is complete
-		// 		}
+				if(!p.probe_init_cmd_sent){ // if you haven't sent the command to initialize the probes
+                    // p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
+					p.initializeProbes(); // send the command
+				}
+				else if(p.probes_initialized){ // this becomes true when probe initialization flag is true
+					if(!p.probe_insert_cmd_sent){ // if you haven't told the probes to insert
+						p.sendProbeInsertCmd(); // tell the probes to insert
+					}
+					else if(p.probe_cycle_complete){ // if a single probe insertion sequence is complete
+						ROS_INFO("Probe insertion cycle complete.");
+					}
+					// p.both_initialized = true; // initialization of both is complete
+					ROS_INFO("Initialization complete");
+				}
 		// 	}
 		// 	break;
 		// 	case true: // when both probes and gantry have been initialized
 		// 	switch(p.full_inspection_complete){
 		// 		case false: // not all targets have been inspected
 		// 		if(!p.sampling_points_generated){
-		// 			sampling_points = p.generateSamplingPoints(p.target_x[p.current_target_id]); // create a vector of points around the current target center
+					// sampling_points = p.generateSamplingPoints(p.target_x[p.current_target_id]); // create a vector of points around the current target center
 		// 		}
 		// 		if(!p.gantry_pos_cmd_sent){ // if you haven't told the gantry to move to the next position
 		// 			p.sendGantryPosCmd(sampling_points[p.sampling_point_index]); // send the position command
@@ -260,12 +247,13 @@ int main(int argc, char **argv)
 		// 				p.sendProbeInsertCmd(); // tell the probes to insert
   //            }
 		// 			else if(p.probe_cycle_complete){ // if a single probe insertion sequence is complete
-		// 				if(p.sampling_point_index==p.num_probes_per_obj-1){ // if you've done the specified number of probes per object
-		// 					p.indiv_inspection_complete = true; // inspection for this object is complete
-		// 					p.current_target_id++; // move to the next target ID
-		// 					p.sampling_points_generated = false; // allows new set of sampling points to be generated for next target
-		// 				}
-		// 				p.gantry_pos_cmd_sent = false; // change the flag
+		// // 				if(p.sampling_point_index==p.num_probes_per_obj-1){ // if you've done the specified number of probes per object
+		// // 					p.indiv_inspection_complete = true; // inspection for this object is complete
+		// // 					p.current_target_id++; // move to the next target ID
+		// // 					p.sampling_points_generated = false; // allows new set of sampling points to be generated for next target
+		// // 				}
+		// // 				p.gantry_pos_cmd_sent = false; // change the flag
+		// 				ROS_INFO("Probe insertion cycle complete.");
 		// 			}
 		// 		}
 		// 		if(p.current_target_id==p.num_targets-1){
@@ -300,6 +288,10 @@ int main(int argc, char **argv)
 //rosrun rosserial_python serial_node.py _baud:=115200 _port:=/dev/serial/by-id/usb-Arduino__www.arduino.cc__0043_A4139373630351909060-if00
 // rosrun rosserial_python serial_node.py /dev/ttyACM0
 
+//probe teensy
+// rosrun rosserial_python serial_node.py _baud:=115200 _port:=/dev/serial/by-id/usb-Teensyduino_USB_Serial_3652290-if00
+
+//gantry teensy
 // rosrun rosserial_python serial_node.py _baud:=115200 _port:=/dev/serial/by-id/usb-Teensyduino_USB_Serial_3376540-if00
 
 // gantry position testing
@@ -341,3 +333,31 @@ int main(int argc, char **argv)
 //     }
 //     return 0;
 // }
+
+// coord transforms not required anymore
+	// // gantry
+	// p.gantry.setOrigin( tf::Vector3(0.2,-0.2,0.4));
+	// p.gantry.setRotation(tf::Quaternion(0,0,0,1));
+	// p.br.sendTransform(tf::StampedTransform(p.gantry,ros::Time::now(), "base_link", "gantry"));
+
+	// 		// initialize transforms
+
+	// // gantry carriage
+	// p.gantry_carriage.setOrigin( tf::Vector3(0.3,0,0));
+	// p.gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
+	// p.br.sendTransform(tf::StampedTransform(p.gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage"));
+
+	// // probe rail
+	// p.probe_rail.setOrigin( tf::Vector3(0,-0.1,-0.2));
+	// tf::Matrix3x3 m_rot;
+	// m_rot.setEulerYPR(0,0 , -30*M_PI/180);
+	// tf::Quaternion quat; 	// Convert into quaternion
+	// m_rot.getRotation(quat);
+	// p.probe_rail.setRotation(tf::Quaternion(quat));
+	// p.br.sendTransform(tf::StampedTransform(p.probe_rail,ros::Time::now(), "gantry_carriage", "probe_rail"));
+
+	// // probe tip
+	// p.probe_tip.setOrigin( tf::Vector3(0,0.4,0));
+	// p.probe_tip.setRotation(tf::Quaternion(0,0,0,1));
+	// p.br.sendTransform(tf::StampedTransform(p.probe_tip,ros::Time::now(), "probe_rail", "probe_tip"));
+	
