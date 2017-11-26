@@ -155,7 +155,6 @@ void Probe::sendGantryIdleCmd(){
 	gantry_send_msg.data.push_back(0); // not safe to move
 	gantry_send_msg.data.push_back(0); // input the position [mm]
 	gantry_cmd_pub.publish(gantry_send_msg); // send the message
-	// gantry_idle_cmd_sent = true; // change the flag
 }
 
 void Probe::sendProbeInsertCmd(){
@@ -165,33 +164,44 @@ void Probe::sendProbeInsertCmd(){
 }
 
 void Probe::printResults(){
-    int mine_correct = 0;
-    int mine_incorrect = 0;
-    int nonmine_correct = 0;
-    int nonmine_incorrect = 0;
-    for (int i = 0; i<num_targets; i++){
+	int mine_correct = 0;
+	int mine_incorrect = 0;
+	int nonmine_correct = 0;
+	int nonmine_incorrect = 0;
+	bool guess;
+	for (int i = 0; i<num_targets; i++){
 		std::vector<geometry_msgs::PointStamped> pts; // (should overwrite with every new i)
+		int num_valid_points = 0;
 		for (int j = 0; j<num_probes_per_obj; j++){
-			pts.push_back(contact_points.at(num_probes_per_obj*i+j));
+			bool valid_point = contact_type.at(num_probes_per_obj*i+j);
+			if (valid_point){ // if the point is valid (i.e. not at end stops)
+				pts.push_back(contact_points.at(num_probes_per_obj*i+j)); // only put valid points in vector
+				num_valid_points++;
+			}
 		}
-		circle circle = classify(pts);
-        bool guess;
-        (circle.rad<=max_radius) ? guess = true : guess = false;
-        if(guess)
-        {
-           float dist = sqrt(pow(target_x.at(i)-circle.center.x,2)+pow(target_y.at(i)-circle.center.y,2));
-           ROS_INFO("Object %d is a landmine. Calculated center is %fcm away from actual location.", i+1, dist);
-           (guess==isMine.at(i)) ? mine_correct++ : mine_incorrect++;
-       }
-       else
-       {
-           ROS_INFO("Object %d is not a landmine.", i+1);
-           (guess==isMine.at(i)) ? nonmine_correct++ : nonmine_incorrect++;
-       }
-   }
-   ROS_INFO("%d out of 3 mines were identified correctly.", mine_correct);
-   ROS_INFO("%d out of 3 non-mines were identified correctly.", nonmine_correct);
-   demo_complete = true;
+		if (num_valid_points>=3){ // if you've got enough points to meaningfully classify with
+			circle circle = classify(pts);
+			(circle.rad<=max_radius) ? guess = true : guess = false; // check against radius threshold
+			if(guess){ // if it is a mine, calculate its center and its distance to the actual location
+				float dist = sqrt(pow(target_x.at(i)-circle.center.x,2)+pow(target_y.at(i)-circle.center.y,2));
+				ROS_INFO("Object %d is a landmine. Calculated center is %fcm away from actual location.", i+1, dist);
+				(guess==isMine.at(i)) ? mine_correct++ : mine_incorrect++;
+			}
+		} else guess = false; // if you didn't hit 3 points then you can't classify it
+
+		// } else if (num_valid_points>0 && num_valid_points<3){ // if you have 1 or 2 points
+		// 	ROS_INFO("Object %d is solid but there is not enough information to work out if is a landmine.", i+1);
+		// }
+
+		if(!guess)
+		{
+			ROS_INFO("Object %d is not a landmine.", i+1);
+			(guess==isMine.at(i)) ? nonmine_correct++ : nonmine_incorrect++;
+		}
+	}
+	ROS_INFO("%d out of 3 mines were identified correctly.", mine_correct);
+	ROS_INFO("%d out of 3 non-mines were identified correctly.", nonmine_correct);
+	demo_complete = true;
 }
 
 int main(int argc, char **argv)
@@ -200,83 +210,79 @@ int main(int argc, char **argv)
 	Probe p;
 	ros::Rate loop_rate(10);
 	ros::Rate delay(1);
-        delay.sleep();
+	delay.sleep();
+	std::vector<float> sampling_points;
+
+
+	p.both_initialized = true;
 
 	while (ros::ok())
 	{
-							// p.initializeProbes(); // send the command
-
-		// p.sendProbeInsertCmd();
-
-		// switch(p.both_initialized){
-		// 	case false: // if either one of the gantry or probes has not completed initialization
-		// 	// if(!p.gantry_init_cmd_sent){ // if you haven't sent the command to initialize the gantry 
-
-		// 	// 	p.initializeGantry(); // send the command
-  //  //     }
-		// 	if (p.gantry_initialized){ // this becomes true when gantry initialization flag is true // removed else
+		switch(p.both_initialized){
+			case false: // if either one of the gantry or probes has not completed initialization
+			if (p.gantry_initialized){ // this becomes true when gantry initialization flag is true // removed else
 				if(!p.probe_init_cmd_sent){ // if you haven't sent the command to initialize the probes
-                    // p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
+					ROS_INFO("Block 1");
+                    p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
 					p.initializeProbes(); // send the command
 				}
 				else if(p.probes_initialized){ // this becomes true when probe initialization flag is true
+					p.both_initialized = true; // initialization of both is complete
+					ROS_INFO("Block 2");
+				}
+			}
+			break;
+			case true: // when both probes and gantry have been initialized
+			switch(p.full_inspection_complete){
+				case false: // not all targets have been inspected
+				if(!p.sampling_points_generated){
+					sampling_points = p.generateSamplingPoints(p.target_x[p.current_target_id]); // create a vector of points around the current target center
+					ROS_INFO("Block 3");
+				}
+				if(!p.gantry_pos_cmd_sent){ // if you haven't told the gantry to move to the next position
+					p.sendGantryPosCmd(sampling_points[p.sampling_point_index]); // send the position command
+					p.sampling_point_index++; // go to the next sampling point
+					ROS_INFO("Block 4");
+				}
+				if(p.gantry_pos_cmd_reached){ // when you've reached the desired position
+					p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
 					if(!p.probe_insert_cmd_sent){ // if you haven't told the probes to insert
 						p.sendProbeInsertCmd(); // tell the probes to insert
+						ROS_INFO("Block 5");
 					}
 					else if(p.probe_cycle_complete){ // if a single probe insertion sequence is complete
-						ROS_INFO("Probe insertion cycle complete.");
+						if(p.sampling_point_index==p.num_probes_per_obj){ // if you've done the specified number of probes per object
+							p.indiv_inspection_complete = true; // inspection for this object is complete
+							p.current_target_id++; // move to the next target ID
+							p.sampling_point_index = 0;
+							p.sampling_points_generated = false; // allows new set of sampling points to be generated for next target
+							ROS_INFO("Block 6");
+							if(p.current_target_id==p.num_targets){
+								p.full_inspection_complete = true; // num_targets-1 because current_target_id starts at 0
+								ROS_INFO("Block 7");
+							} 
+						}
+						p.gantry_pos_cmd_sent = false; // change the flag
 					}
-					// p.both_initialized = true; // initialization of both is complete
-					ROS_INFO("Initialization complete");
 				}
-		// 	}
-		// 	break;
-		// 	case true: // when both probes and gantry have been initialized
-		// 	switch(p.full_inspection_complete){
-		// 		case false: // not all targets have been inspected
-		// 		if(!p.sampling_points_generated){
-					// sampling_points = p.generateSamplingPoints(p.target_x[p.current_target_id]); // create a vector of points around the current target center
-		// 		}
-		// 		if(!p.gantry_pos_cmd_sent){ // if you haven't told the gantry to move to the next position
-		// 			p.sendGantryPosCmd(sampling_points[p.sampling_point_index]); // send the position command
-		// 			p.sampling_point_index++; // go to the next sampling point
-		// 		}
-		// 		if(p.gantry_pos_cmd_reached){ // when you've reached the desired position
-		// 			p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
-		// 			if(!p.probe_insert_cmd_sent){ // if you haven't told the probes to insert
-		// 				p.sendProbeInsertCmd(); // tell the probes to insert
-  //            }
-		// 			else if(p.probe_cycle_complete){ // if a single probe insertion sequence is complete
-		// // 				if(p.sampling_point_index==p.num_probes_per_obj-1){ // if you've done the specified number of probes per object
-		// // 					p.indiv_inspection_complete = true; // inspection for this object is complete
-		// // 					p.current_target_id++; // move to the next target ID
-		// // 					p.sampling_points_generated = false; // allows new set of sampling points to be generated for next target
-		// // 				}
-		// // 				p.gantry_pos_cmd_sent = false; // change the flag
-		// 				ROS_INFO("Probe insertion cycle complete.");
-		// 			}
-		// 		}
-		// 		if(p.current_target_id==p.num_targets-1){
-		// 			p.full_inspection_complete = true; // num_targets-1 because current_target_id starts at 0
-		// 		} 
-		// 		break;
-		// 		case true: // all targets have been inspected
-  //               switch(p.demo_complete){
-  //                   case false:
-  //                   p.printResults();
-  //                   case true: // do nothing
-  //                   break;
-  //                   default:
-  //                   break;
-  //               }
-  //               break;
-  //               default:
-  //               break;
-  //           }
-  //           break;
-  //           default:
-  //           break;
-  //       }
+				break;
+				case true: // all targets have been inspected
+				switch(p.demo_complete){
+					case false:
+					p.printResults();
+                    case true: // do nothing
+                    break;
+                    default:
+                    break;
+                }
+                break;
+                default:
+                break;
+            }
+            break;
+            default:
+            break;
+        }
 
         ros::spinOnce();
 
@@ -311,7 +317,7 @@ int main(int argc, char **argv)
 
 // 	move_locations = {.2,.7,.453,.6};
 // 	int test_target_id = 0;
-// 	std::vector<float> sampling_points;
+	// std::vector<float> sampling_points;
 // 	bool done = false;
 
 // 	while (ros::ok())
@@ -360,4 +366,4 @@ int main(int argc, char **argv)
 	// p.probe_tip.setOrigin( tf::Vector3(0,0.4,0));
 	// p.probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 	// p.br.sendTransform(tf::StampedTransform(p.probe_tip,ros::Time::now(), "probe_rail", "probe_tip"));
-	
+

@@ -47,23 +47,30 @@ void probeStatusClbk(const std_msgs::Int16MultiArray& msg){
 }
 
 void probeContactClbk(const std_msgs::Int16MultiArray& msg){
-	probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
+	probes_initialized = (bool)msg.data.at(1);
 	probe_solid_contact = (bool)msg.data.at(4);
-	ROS_INFO("%f", probe_carriage_pos);
-	probe_tip.setOrigin( tf::Vector3(0,0.485+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
-	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
-	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
-	tf::StampedTransform probe_tf;
-	probe_listener.lookupTransform("probe_tip","base_link",ros::Time(0),probe_tf);
-	geometry_msgs::PointStamped cp; // single contact point (cp)
-	tf::Vector3 probe_tip_origin;
-	probe_tip_origin = probe_tf.getOrigin();
-	cp.point.x = probe_tip_origin.x();
-	cp.point.y = probe_tip_origin.y();
-	cp.point.z = probe_tip_origin.z();
-	ROS_INFO("%f",cp.point.z);
-	probe_contact_pub.publish(cp); // publish to save in rosbag
-	contact_points.push_back(cp); // save into vector for internal processing
+	if(!probes_initialized){ // if you got here by accident during initialization, don't record the point
+		return;
+	}
+	else{
+		probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
+		probe_solid_contact = (bool)msg.data.at(4);
+		// ROS_INFO("%f", probe_carriage_pos);
+		probe_tip.setOrigin( tf::Vector3(0,0.485+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
+		probe_tip.setRotation(tf::Quaternion(0,0,0,1));
+		br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
+		tf::StampedTransform probe_tf;
+		probe_listener.lookupTransform("probe_tip","base_link",ros::Time(0),probe_tf);
+		geometry_msgs::PointStamped cp; // single contact point (cp)
+		tf::Vector3 probe_tip_origin;
+		probe_tip_origin = probe_tf.getOrigin();
+		cp.point.x = probe_tip_origin.x();
+		cp.point.y = probe_tip_origin.y();
+		cp.point.z = probe_tip_origin.z();
+		probe_contact_pub.publish(cp); // publish to save in rosbag
+		contact_points.push_back(cp); // save into vector for internal processing
+		contact_type.push_back(probe_solid_contact);
+	}
 }
 
 void gantryStatusClbk(const std_msgs::Int16MultiArray& msg){
@@ -107,6 +114,7 @@ tf::Transform probe_rail;
 tf::Transform probe_tip;
 
 std::vector<geometry_msgs::PointStamped> contact_points;
+std::vector<bool> contact_type;
 
 // Helper functions
 
@@ -146,7 +154,7 @@ std::vector<double> target_y = {0.3};//{0.3, 0.3, 0.3, 0.3, 0.3, 0.3};
 std::vector<bool> isMine = {1};  //  {1, 1, 1, 0, 0, 0}; // 1 if mine, 0 if non-mine
 int num_probes_per_obj = 5;
 float spacing_between_probes = 0.02; // [m] = 2cm
-float sample_width = num_probes_per_obj*spacing_between_probes;
+float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
 float max_radius = 0.15; // [m] = 15cm
 
 int num_targets = target_x.size();
