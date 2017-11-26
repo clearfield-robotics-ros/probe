@@ -20,14 +20,14 @@ public:
 
 
 	// publishers
-	probe_cmd_pub = n.advertise<std_msgs::Int16>("probe_cmd_send", 1000);
-	probe_contact_pub = n.advertise<geometry_msgs::PointStamped>("probe_contact_send", 1000);
-	gantry_cmd_pub = n.advertise<std_msgs::Int16MultiArray>("gantry_cmd_send", 1000);
+	probe_cmd_pub = n.advertise<std_msgs::Int16>("probe_t/probe_cmd_send", 1000);
+	probe_contact_pub = n.advertise<geometry_msgs::PointStamped>("probe_t/probe_contact_send", 1000);
+	gantry_cmd_pub = n.advertise<std_msgs::Int16MultiArray>("gantry/gantry_cmd_send", 1000);
 
 	// subscribers
-	probe_status_sub = n.subscribe("probe_status_reply", 1000, &Probe::probeStatusClbk, this);
-	probe_contact_sub = n.subscribe("probe_contact_reply", 1000, &Probe::probeContactClbk, this);
-	gantry_status_sub = n.subscribe("gantryStat", 1000, &Probe::gantryStatusClbk, this);
+	probe_status_sub = n.subscribe("probe_t/probe_status_reply", 1000, &Probe::probeStatusClbk, this);
+	probe_contact_sub = n.subscribe("probe_t/probe_contact_reply", 1000, &Probe::probeContactClbk, this);
+	gantry_status_sub = n.subscribe("gantry/gantryStat", 1000, &Probe::gantryStatusClbk, this);
 	};
 	
 	ros::NodeHandle n;
@@ -41,9 +41,10 @@ void probeStatusClbk(const std_msgs::Int16MultiArray& msg){
 	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	probes_initialized = (bool)msg.data.at(1);
-	probe_cycle_complete = (bool)msg.data.at(2);
+	probes_at_home = msg.data.at(0)==1;
+	// probe_cycle_complete = (bool)msg.data.at(2);
 	probe_solid_contact = (bool)msg.data.at(4);
-	ROS_INFO("Probe mode: %d, Initialized: %d, Cycle complete: %d, Carriage pos: %f", probe_mode, probes_initialized, probe_cycle_complete, probe_carriage_pos);
+	ROS_INFO("Probe mode: %d, Initialized: %d, Carriage pos: %f", probe_mode, probes_initialized, probe_carriage_pos);
 }
 
 void probeContactClbk(const std_msgs::Int16MultiArray& msg){
@@ -78,7 +79,7 @@ void gantryStatusClbk(const std_msgs::Int16MultiArray& msg){
 	gantry_initialized = (bool)msg.data.at(1);
 	gantry_pos_cmd_reached = (bool)msg.data.at(2); // third entry is the status of whether or not the command position has been reached
     gantry_carriage_pos = (float)msg.data.at(3)/1000.0; // second entry is the gantry carriage position [mm->m]
-    gantry_carriage.setOrigin( tf::Vector3(0,0.1+gantry_carriage_pos,0)); // update origin of gantry carriage coordinate frame
+    gantry_carriage.setOrigin( tf::Vector3(0.09+gantry_carriage_pos,-0.13,0.365)); // update origin of gantry carriage coordinate frame
 	gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
     br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
 }
@@ -149,11 +150,11 @@ void sendProbeInsertCmd();
 void printResults();
 
 // probing parameters
-std::vector<double> target_x = {0.3};//{0.2, 0.3, 0.4, 0.5, 0.6, 0.7}; // [m]
-std::vector<double> target_y = {0.3};//{0.3, 0.3, 0.3, 0.3, 0.3, 0.3};
+std::vector<double> target_x = {0.6};//{0.2, 0.3, 0.4, 0.5, 0.6, 0.7}; // [m]
+std::vector<double> target_y = {0.35};//{0.3, 0.3, 0.3, 0.3, 0.3, 0.3};
 std::vector<bool> isMine = {1};  //  {1, 1, 1, 0, 0, 0}; // 1 if mine, 0 if non-mine
-int num_probes_per_obj = 5;
-float spacing_between_probes = 0.02; // [m] = 2cm
+int num_probes_per_obj = 4;
+float spacing_between_probes = 0.03; // [m] = 2cm
 float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
 float max_radius = 0.15; // [m] = 15cm
 
@@ -161,7 +162,7 @@ int num_targets = target_x.size();
 int current_target_id = 0;
 int sampling_point_index = 0;
 bool sampling_points_generated = false;
-bool indiv_inspection_complete = false;
+// bool indiv_inspection_complete = false;
 bool full_inspection_complete = false;
 
 // locations of gantry and probe carriages
@@ -186,11 +187,13 @@ bool gantry_pos_cmd_sent =      false;
 bool gantry_pos_cmd_reached =   false;
 
 bool probes_initialized =       false;
+bool probes_returned_home =	    false;
 bool probe_init_cmd_sent =      false;
 bool probe_insert_cmd_sent =    false;
 bool probe_cycle_complete =     false;
 bool probe_solid_contact =      false;
 bool demo_complete =            false;
+bool ready_for_next_probe =		false;
 
 private:
 

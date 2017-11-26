@@ -172,6 +172,8 @@ void Probe::printResults(){
 	for (int i = 0; i<num_targets; i++){
 		std::vector<geometry_msgs::PointStamped> pts; // (should overwrite with every new i)
 		int num_valid_points = 0;
+										ROS_INFO("Block 8");
+
 		for (int j = 0; j<num_probes_per_obj; j++){
 			bool valid_point = contact_type.at(num_probes_per_obj*i+j);
 			if (valid_point){ // if the point is valid (i.e. not at end stops)
@@ -188,6 +190,7 @@ void Probe::printResults(){
 				(guess==isMine.at(i)) ? mine_correct++ : mine_incorrect++;
 			}
 		} else guess = false; // if you didn't hit 3 points then you can't classify it
+										ROS_INFO("Block 9");
 
 		// } else if (num_valid_points>0 && num_valid_points<3){ // if you have 1 or 2 points
 		// 	ROS_INFO("Object %d is solid but there is not enough information to work out if is a landmine.", i+1);
@@ -212,9 +215,6 @@ int main(int argc, char **argv)
 	ros::Rate delay(1);
 	delay.sleep();
 	std::vector<float> sampling_points;
-
-
-	p.both_initialized = true;
 
 	while (ros::ok())
 	{
@@ -250,18 +250,19 @@ int main(int argc, char **argv)
 						p.sendProbeInsertCmd(); // tell the probes to insert
 						ROS_INFO("Block 5");
 					}
-					else if(p.probe_cycle_complete){ // if a single probe insertion sequence is complete
+					else if(p.probe_mode==1){ // if probe is back at home
 						if(p.sampling_point_index==p.num_probes_per_obj){ // if you've done the specified number of probes per object
-							p.indiv_inspection_complete = true; // inspection for this object is complete
+							// p.indiv_inspection_complete = true; // inspection for this object is complete
 							p.current_target_id++; // move to the next target ID
 							p.sampling_point_index = 0;
 							p.sampling_points_generated = false; // allows new set of sampling points to be generated for next target
 							ROS_INFO("Block 6");
 							if(p.current_target_id==p.num_targets){
-								p.full_inspection_complete = true; // num_targets-1 because current_target_id starts at 0
+								p.full_inspection_complete = true;
 								ROS_INFO("Block 7");
 							} 
 						}
+						p.probe_insert_cmd_sent = false; 
 						p.gantry_pos_cmd_sent = false; // change the flag
 					}
 				}
