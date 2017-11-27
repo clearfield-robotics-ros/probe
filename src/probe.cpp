@@ -150,7 +150,7 @@ void Probe::sendGantryPosCmd(){
 	gantry_handshake = false;
 	gantry_command_arrived = false;
 
-	ROS_INFO("gantry pos cmd: %d",(int)gantry_pos_cmd*1000);
+	// ROS_INFO("gantry pos cmd: %d",(int)gantry_pos_cmd*1000);
 	gantry_send_msg.data.clear(); // flush out previous data
 	// if(gantry_safe_to_move){	
 		gantry_send_msg.data.push_back(1); // safe to move
@@ -170,6 +170,14 @@ void Probe::sendGantryIdleCmd(){
 	gantry_send_msg.data.push_back(0); // input the position [mm]
 	gantry_cmd_pub.publish(gantry_send_msg); // send the message
 }
+
+void Probe::updateGantryState() {
+	// p.gantry_cmd_hack_msg.data.clear(); // flush out previous data
+	gantry_cmd_hack_msg.data = 3;
+	gantry_cmd_hack_pub.publish(gantry_cmd_hack_msg);
+}
+
+
 
 void Probe::sendProbeInsertCmd(){
 	probe_send_msg.data = probe_insert_cmd; // change it to probe mode
@@ -194,15 +202,17 @@ void Probe::printResults(){
 	ROS_INFO("1");
 	for (int i = 0; i<num_targets; i++){
 		std::vector<geometry_msgs::PointStamped> pts; // (should overwrite with every new i)
-	ROS_INFO("2");
+		ROS_INFO("2");
 		int num_valid_points = 0;
-	ROS_INFO("3");
+		ROS_INFO("3");
+
+
 
 		for (int j = 0; j<num_probes_per_obj; j++){
-	ROS_INFO("4");
+			ROS_INFO("i = %d, j = %d", i,j); // was ROS_INFO("4");
 			bool valid_point = contact_type.at(num_probes_per_obj*i+j);
 			if (valid_point){ // if the point is valid (i.e. not at end stops)
-	ROS_INFO("5");
+				ROS_INFO("5");
 				pts.push_back(contact_points.at(num_probes_per_obj*i+j)); // only put valid points in vector
 				num_valid_points++;
 			}
@@ -244,8 +254,9 @@ int main(int argc, char **argv)
 	delay.sleep();
 
 	std::vector<float> sampling_points = p.generateSamplingPoints();
-
+	ROS_INFO("%d targets, each with %d sampling points, for a total of %d probes", p.num_targets, p.num_probes_per_obj, p.num_targets*p.num_probes_per_obj);
 	p.sendProbeCmd(3); // init probes
+
 	ros::spinOnce();
 
 	bool blockGantry = false;
@@ -253,6 +264,9 @@ int main(int argc, char **argv)
 
 	while (ros::ok())
 	{
+
+		p.updateGantryState();
+
 		if (p.probe_handshake) p.probe_command_arrived = true;
 		if (p.gantry_handshake) p.gantry_command_arrived = true;
 
@@ -261,7 +275,7 @@ int main(int argc, char **argv)
 
 		ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", 
 			p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
-		ROS_INFO("Targ ID: %d",p.sampling_point_index);//, sampling_points.at(p.sampling_point_index));
+		ROS_INFO("After this probe, the next sampling point is: %d", p.sampling_point_index);//, sampling_points.at(p.sampling_point_index));
 
 		if (p.probe_command_arrived && p.gantry_command_arrived && p.probes_initialized)
 		{

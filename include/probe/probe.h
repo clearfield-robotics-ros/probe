@@ -18,11 +18,11 @@ public:
 	Probe()
 	{
 
-
 	// publishers
 	probe_cmd_pub = n.advertise<std_msgs::Int16>("probe_t/probe_cmd_send", 1000); // removed probe_t
 	probe_contact_pub = n.advertise<geometry_msgs::PointStamped>("probe_t/probe_contact_send", 1000);
 	gantry_cmd_pub = n.advertise<std_msgs::Int16MultiArray>("gantry/gantry_cmd_send", 1000);
+	gantry_cmd_hack_pub = n.advertise<std_msgs::Int16>("gantry/gantry_cmd_hack_send", 1000);
 
 	// subscribers
 	probe_status_sub = n.subscribe("probe_t/probe_status_reply", 1000, &Probe::probeStatusClbk, this); // removed gantry/
@@ -97,7 +97,13 @@ void gantryStatusClbk(const std_msgs::Int16MultiArray& msg) {
     gantry_carriage.setOrigin( tf::Vector3(0.09+gantry_carriage_pos,-0.13,0.365)); // update origin of gantry carriage coordinate frame
 	gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
     br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
-	// (gantry_pos_cmd_reached) ? probes_safe_to_move = true : probes_safe_to_move = false;
+		// if (gantry_initialized){	
+		// 	ROS_INFO("gantry initialized");
+		// 	// std_msgs::Int16 temp;
+		// 	// temp.data = 3;
+		// 	// gantry_cmd_hack_pub.publish(temp.data);
+		// }		
+
 }
 
 struct point2D { float x, y; };
@@ -110,11 +116,13 @@ struct circle {
 // messages
 std_msgs::Int16 probe_send_msg;
 std_msgs::Int16MultiArray gantry_send_msg;
+std_msgs::Int16 gantry_cmd_hack_msg;
 
 // publishers
 ros::Publisher probe_contact_pub;
 ros::Publisher probe_cmd_pub;
 ros::Publisher gantry_cmd_pub;
+ros::Publisher gantry_cmd_hack_pub;
 
 // subscribers
 ros::Subscriber probe_status_sub;
@@ -161,6 +169,8 @@ void sendGantryPosCmd();
 
 void sendGantryIdleCmd();
 
+void updateGantryState();
+
 void sendProbeInsertCmd();
 
 bool sendProbeCmd(int cmd);
@@ -168,12 +178,12 @@ bool sendProbeCmd(int cmd);
 void printResults();
 
 // probing parameters
-// std::vector<double> target_x = {0.1, 0.25, 0.4, 0.55, 0.7}; // [m]
-std::vector<double> target_x = {0.1}; // [m]
-// std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3, 0.3};
-std::vector<double> target_y = {0.3};
-// std::vector<bool> isMine = {1, 1, 1, 0, 0}; // 1 if mine, 0 if non-mine
-std::vector<bool> isMine = {0}; // 1 if mine, 0 if non-mine
+std::vector<double> target_x = {0.1, 0.25, 0.4, 0.55, 0.7}; // [m]
+// std::vector<double> target_x = {0.1}; // [m]
+std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3, 0.3};
+// std::vector<double> target_y = {0.3};
+std::vector<bool> isMine = {1, 1, 1, 0, 0}; // 1 if mine, 0 if non-mine
+// std::vector<bool> isMine = {0}; // 1 if mine, 0 if non-mine
 int num_probes_per_obj = 4;
 float spacing_between_probes = 0.02; // [m]
 float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
