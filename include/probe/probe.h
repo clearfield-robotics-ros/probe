@@ -37,16 +37,22 @@ public:
 void probeStatusClbk(const std_msgs::Int16MultiArray& msg){
 	// ROS_INFO("probe");
 	probe_mode = msg.data.at(0); // first entry is the reported state
+
+	if (probe_mode == desired_probe_mode) probe_handshake = true;
+
 	probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
+
 	probe_tip.setOrigin( tf::Vector3(0,0.485+probe_carriage_pos,0)); // update origin of probe tip coordinate frame [m]
 	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
+
 	probes_initialized = (bool)msg.data.at(1);
-	probes_returned_home = msg.data.at(0)==1;
+	// probes_returned_home = msg.data.at(0)==1;
 	// probe_cycle_complete = (bool)msg.data.at(2);
 	probe_solid_contact = (bool)msg.data.at(4);
 	// ROS_INFO("Probe mode: %d, Initialized: %d, Carriage pos: %f", probe_mode, probes_initialized, probe_carriage_pos);
-	(probe_mode==0 || probe_mode==2 || probe_mode==3) ? gantry_safe_to_move = false : gantry_safe_to_move = true;
+	probe_mode == 1 ? gantry_safe_to_move = true : gantry_safe_to_move = false;
+
 	if (probe_mode==2) {outbound = true; inbound = false;}
 	if (probe_mode==0) {inbound = true; outbound = false;}
 }
@@ -78,11 +84,14 @@ void probeContactClbk(const std_msgs::Int16MultiArray& msg){
 	}
 }
 
-void gantryStatusClbk(const std_msgs::Int16MultiArray& msg){
+void gantryStatusClbk(const std_msgs::Int16MultiArray& msg) {
 	// ROS_INFO("gantry");
 	gantry_mode = msg.data.at(0); // first entry is the reported state
 	gantry_initialized = (bool)msg.data.at(1);
 	gantry_pos_cmd_reached = (bool)msg.data.at(2); // third entry is the status of whether or not the command position has been reached
+	
+	if (gantry_pos_cmd_reached == 0) gantry_handshake = true;
+
 	// ROS_INFO("gantry_mode=%d, gantry_initialized=%d", gantry_mode, gantry_initialized);
     gantry_carriage_pos = (float)msg.data.at(3)/1000.0; // fourth entry is the gantry carriage position [mm->m]
     gantry_carriage.setOrigin( tf::Vector3(0.09+gantry_carriage_pos,-0.13,0.365)); // update origin of gantry carriage coordinate frame
@@ -154,6 +163,8 @@ void sendGantryIdleCmd();
 
 void sendProbeInsertCmd();
 
+bool sendProbeCmd(int cmd);
+
 void printResults();
 
 // probing parameters
@@ -182,7 +193,12 @@ int probe_initialize_cmd =      3;
 
 // initialize modes
 int probe_mode =                1; // idle
+int desired_probe_mode = 		1;
+bool probe_handshake = 			false;
+bool probe_command_arrived = 	true;
 int gantry_mode =               0; // idle
+bool gantry_handshake = 		false;
+bool gantry_command_arrived = 	true;
 
 // initialization flags
 bool both_initialized =         false; // both probes and gantry

@@ -146,18 +146,24 @@ void Probe::initializeProbes(){
 // Command functions
 
 void Probe::sendGantryPosCmd(){
+
+	ROS_INFO("%d sent to gantry", gantry_pos_cmd);
+
+	gantry_handshake = false;
+	gantry_command_arrived = false;
+
 	gantry_send_msg.data.clear(); // flush out previous data
 	if(gantry_safe_to_move){	
 		gantry_send_msg.data.push_back(1); // safe to move
 		gantry_send_msg.data.push_back(gantry_pos_cmd); // input the position [mm]
 	} else {	
-		gantry_send_msg.data.push_back(0); // safe to move
+		gantry_send_msg.data.push_back(0); // not safe to move
 		gantry_send_msg.data.push_back(0); // input the position [mm]
 	}
+
 	gantry_cmd_pub.publish(gantry_send_msg); // send the message
 	gantry_pos_cmd_sent = true; // change the flag
 
-	//
 	// gantry_safe_to_move = true;
 	// probes_safe_to_move = false;
 }
@@ -170,17 +176,26 @@ void Probe::sendGantryIdleCmd(){
 }
 
 void Probe::sendProbeInsertCmd(){
-	if(probes_safe_to_move){
+	// if(probes_safe_to_move){
 		probe_send_msg.data = probe_insert_cmd; // change it to probe mode
-	} else {
-		probe_send_msg.data = probe_idle_cmd; // change it to probe mode
-	}
+	// } else {
+	// 	probe_send_msg.data = probe_idle_cmd; // change it to probe mode
+	// }
 	probe_cmd_pub.publish(probe_send_msg); // send the message
 	// probe_insert_cmd_sent = true; // change the flag
 
 	//
 	// gantry_safe_to_move = false;
 	// probes_safe_to_move = true;
+}
+
+bool Probe::sendProbeCmd(int cmd) {
+	ROS_INFO("cmd_%d sent to probes", cmd);
+	desired_probe_mode = cmd;
+	probe_handshake = false;
+	probe_command_arrived = false;
+	probe_send_msg.data = cmd; // change it to probe mode
+	probe_cmd_pub.publish(probe_send_msg); // send the message
 }
 
 void Probe::printResults(){
@@ -243,29 +258,48 @@ int main(int argc, char **argv)
 	int test_target_id = 0;
 
 	bool test_complete = false;
+
+	p.sendProbeCmd(3); // init probes
+	ros::spinOnce();
+
+	bool blockGantry = false;
+	bool blockProbe = false;
+
 	while (ros::ok())
 	{
-		ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
-		ROS_INFO("P Init: %d. P Mode: %d. P at Home: %d. ", p.probes_initialized, p.probe_mode, p.probes_returned_home );
-		ROS_INFO("Targ ID: %d, Targ loc: %d",test_target_id, move_locations.at(test_target_id));
-		if(!p.probe_init_cmd_sent){							
-			p.initializeProbes(); // send the command
+		if (p.probe_handshake) p.probe_command_arrived = true;
+		if (p.gantry_handshake) p.gantry_command_arrived = true;
+
+		ROS_INFO("command received: %d. P Mode: %d. P Init: %d. G safe to move: %d. ", 
+			p.probe_command_arrived, p.probe_mode, p.probes_initialized, p.gantry_safe_to_move );
+
+		ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", 
+				p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
+		// ROS_INFO("Targ ID: %d, Targ loc: %d",test_target_id, move_locations.at(test_target_id));
+
+		if (p.probe_command_arrived && p.gantry_command_arrived)
+		{
+
+			// ready to move gantry
+			if (p.probes_initialized && p.probe_mode == 1 && !blockGantry) {
+
+				p.gantry_pos_cmd = move_locations.at(test_target_id);
+				
+				test_target_id++;
+				if (test_target_id > (number_locations-1)) test_target_id = (number_locations-1);
+
+				p.sendGantryPosCmd();
+				blockGantry = true;
+				blockProbe = false;
+			}
+
+			else if (p.gantry_pos_cmd_reached && !blockProbe) {
+				p.sendProbeCmd(2);
+				blockProbe = true;
+				blockGantry = false;
+			}
+
 		}
-		
-		p.gantry_pos_cmd = move_locations.at(test_target_id);
-
-		//whether it is supposed to move gantry
-		if(p.probes_initialized && p.gantry_safe_to_move){
-			p.sendGantryPosCmd();
-			ROS_INFO("pos3");
-		}
-
-		//whether it is safe to probe
-		if(p.probes_initialized && p.probes_safe_to_move && !test_complete){
-			p.sendProbeInsertCmd();
-
-		}
-
         ros::spinOnce();
         loop_rate.sleep();
     }
