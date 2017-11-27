@@ -20,12 +20,12 @@ public:
 
 
 	// publishers
-	probe_cmd_pub = n.advertise<std_msgs::Int16>("probe_t/probe_cmd_send", 1000);
+	probe_cmd_pub = n.advertise<std_msgs::Int16>("probe_t/probe_cmd_send", 1000); // removed probe_t
 	probe_contact_pub = n.advertise<geometry_msgs::PointStamped>("probe_t/probe_contact_send", 1000);
 	gantry_cmd_pub = n.advertise<std_msgs::Int16MultiArray>("gantry/gantry_cmd_send", 1000);
 
 	// subscribers
-	probe_status_sub = n.subscribe("probe_t/probe_status_reply", 1000, &Probe::probeStatusClbk, this);
+	probe_status_sub = n.subscribe("probe_t/probe_status_reply", 1000, &Probe::probeStatusClbk, this); // removed gantry/
 	probe_contact_sub = n.subscribe("probe_t/probe_contact_reply", 1000, &Probe::probeContactClbk, this);
 	gantry_status_sub = n.subscribe("gantry/gantryStat", 1000, &Probe::gantryStatusClbk, this);
 	};
@@ -35,16 +35,20 @@ public:
 	// Callback functions
 
 void probeStatusClbk(const std_msgs::Int16MultiArray& msg){
+	// ROS_INFO("probe");
 	probe_mode = msg.data.at(0); // first entry is the reported state
 	probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
 	probe_tip.setOrigin( tf::Vector3(0,0.485+probe_carriage_pos,0)); // update origin of probe tip coordinate frame [m]
 	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	probes_initialized = (bool)msg.data.at(1);
-	probes_at_home = msg.data.at(0)==1;
+	probes_returned_home = msg.data.at(0)==1;
 	// probe_cycle_complete = (bool)msg.data.at(2);
 	probe_solid_contact = (bool)msg.data.at(4);
-	ROS_INFO("Probe mode: %d, Initialized: %d, Carriage pos: %f", probe_mode, probes_initialized, probe_carriage_pos);
+	// ROS_INFO("Probe mode: %d, Initialized: %d, Carriage pos: %f", probe_mode, probes_initialized, probe_carriage_pos);
+	(probe_mode==0 || probe_mode==2 || probe_mode==3) ? gantry_safe_to_move = false : gantry_safe_to_move = true;
+	if (probe_mode==2) {outbound = true; inbound = false;}
+	if (probe_mode==0) {inbound = true; outbound = false;}
 }
 
 void probeContactClbk(const std_msgs::Int16MultiArray& msg){
@@ -75,13 +79,16 @@ void probeContactClbk(const std_msgs::Int16MultiArray& msg){
 }
 
 void gantryStatusClbk(const std_msgs::Int16MultiArray& msg){
+	// ROS_INFO("gantry");
 	gantry_mode = msg.data.at(0); // first entry is the reported state
 	gantry_initialized = (bool)msg.data.at(1);
 	gantry_pos_cmd_reached = (bool)msg.data.at(2); // third entry is the status of whether or not the command position has been reached
-    gantry_carriage_pos = (float)msg.data.at(3)/1000.0; // second entry is the gantry carriage position [mm->m]
+	// ROS_INFO("gantry_mode=%d, gantry_initialized=%d", gantry_mode, gantry_initialized);
+    gantry_carriage_pos = (float)msg.data.at(3)/1000.0; // fourth entry is the gantry carriage position [mm->m]
     gantry_carriage.setOrigin( tf::Vector3(0.09+gantry_carriage_pos,-0.13,0.365)); // update origin of gantry carriage coordinate frame
 	gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
     br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
+	(gantry_pos_cmd_reached) ? probes_safe_to_move = true : probes_safe_to_move = false;
 }
 
 struct point2D { float x, y; };
@@ -141,7 +148,7 @@ void initializeProbes();
 
 // Command functions
 
-void sendGantryPosCmd(float pos);
+void sendGantryPosCmd();
 
 void sendGantryIdleCmd();
 
@@ -162,7 +169,6 @@ int num_targets = target_x.size();
 int current_target_id = 0;
 int sampling_point_index = 0;
 bool sampling_points_generated = false;
-// bool indiv_inspection_complete = false;
 bool full_inspection_complete = false;
 
 // locations of gantry and probe carriages
@@ -194,6 +200,13 @@ bool probe_cycle_complete =     false;
 bool probe_solid_contact =      false;
 bool demo_complete =            false;
 bool ready_for_next_probe =		false;
+
+int gantry_pos_cmd_actual_delta=0;
+bool gantry_safe_to_move = false;
+bool probes_safe_to_move = false;
+bool inbound = false;
+bool outbound = false;
+float gantry_pos_cmd = 0;
 
 private:
 

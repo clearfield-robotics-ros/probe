@@ -136,18 +136,30 @@ void Probe::initializeGantry(){
 
 void Probe::initializeProbes(){
 	probe_send_msg.data = probe_initialize_cmd;
+	// std_msgs::Int16 num;
+	// num.data = 3;
+	// probe_cmd_pub.publish(num);
 	probe_cmd_pub.publish(probe_send_msg);
 	probe_init_cmd_sent = true;
 }
 
 // Command functions
 
-void Probe::sendGantryPosCmd(float pos){
+void Probe::sendGantryPosCmd(){
 	gantry_send_msg.data.clear(); // flush out previous data
-	gantry_send_msg.data.push_back(1); // safe to move
-	gantry_send_msg.data.push_back((int)(pos*1000)); // input the position [mm]
+	if(gantry_safe_to_move){	
+		gantry_send_msg.data.push_back(1); // safe to move
+		gantry_send_msg.data.push_back(gantry_pos_cmd); // input the position [mm]
+	} else {	
+		gantry_send_msg.data.push_back(0); // safe to move
+		gantry_send_msg.data.push_back(0); // input the position [mm]
+	}
 	gantry_cmd_pub.publish(gantry_send_msg); // send the message
 	gantry_pos_cmd_sent = true; // change the flag
+
+	//
+	// gantry_safe_to_move = true;
+	// probes_safe_to_move = false;
 }
 
 void Probe::sendGantryIdleCmd(){
@@ -158,9 +170,17 @@ void Probe::sendGantryIdleCmd(){
 }
 
 void Probe::sendProbeInsertCmd(){
-	probe_send_msg.data = probe_insert_cmd; // change it to probe mode
+	if(probes_safe_to_move){
+		probe_send_msg.data = probe_insert_cmd; // change it to probe mode
+	} else {
+		probe_send_msg.data = probe_idle_cmd; // change it to probe mode
+	}
 	probe_cmd_pub.publish(probe_send_msg); // send the message
-	probe_insert_cmd_sent = true; // change the flag
+	// probe_insert_cmd_sent = true; // change the flag
+
+	//
+	// gantry_safe_to_move = false;
+	// probes_safe_to_move = true;
 }
 
 void Probe::printResults(){
@@ -172,7 +192,6 @@ void Probe::printResults(){
 	for (int i = 0; i<num_targets; i++){
 		std::vector<geometry_msgs::PointStamped> pts; // (should overwrite with every new i)
 		int num_valid_points = 0;
-										ROS_INFO("Block 8");
 
 		for (int j = 0; j<num_probes_per_obj; j++){
 			bool valid_point = contact_type.at(num_probes_per_obj*i+j);
@@ -181,6 +200,8 @@ void Probe::printResults(){
 				num_valid_points++;
 			}
 		}
+												ROS_INFO("nvp: %d", num_valid_points);
+
 		if (num_valid_points>=3){ // if you've got enough points to meaningfully classify with
 			circle circle = classify(pts);
 			(circle.rad<=max_radius) ? guess = true : guess = false; // check against radius threshold
@@ -214,83 +235,153 @@ int main(int argc, char **argv)
 	ros::Rate loop_rate(10);
 	ros::Rate delay(1);
 	delay.sleep();
-	std::vector<float> sampling_points;
 
+	std::vector<int> move_locations;
+	int number_locations = 4;
+
+	move_locations = {200,300,400,500};
+	int test_target_id = 0;
+
+	bool test_complete = false;
 	while (ros::ok())
 	{
-		switch(p.both_initialized){
-			case false: // if either one of the gantry or probes has not completed initialization
-			if (p.gantry_initialized){ // this becomes true when gantry initialization flag is true // removed else
-				if(!p.probe_init_cmd_sent){ // if you haven't sent the command to initialize the probes
-					ROS_INFO("Block 1");
-                    p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
-					p.initializeProbes(); // send the command
-				}
-				else if(p.probes_initialized){ // this becomes true when probe initialization flag is true
-					p.both_initialized = true; // initialization of both is complete
-					ROS_INFO("Block 2");
-				}
-			}
-			break;
-			case true: // when both probes and gantry have been initialized
-			switch(p.full_inspection_complete){
-				case false: // not all targets have been inspected
-				if(!p.sampling_points_generated){
-					sampling_points = p.generateSamplingPoints(p.target_x[p.current_target_id]); // create a vector of points around the current target center
-					ROS_INFO("Block 3");
-				}
-				if(!p.gantry_pos_cmd_sent){ // if you haven't told the gantry to move to the next position
-					p.sendGantryPosCmd(sampling_points[p.sampling_point_index]); // send the position command
-					p.sampling_point_index++; // go to the next sampling point
-					ROS_INFO("Block 4");
-				}
-				if(p.gantry_pos_cmd_reached){ // when you've reached the desired position
-					p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
-					if(!p.probe_insert_cmd_sent){ // if you haven't told the probes to insert
-						p.sendProbeInsertCmd(); // tell the probes to insert
-						ROS_INFO("Block 5");
-					}
-					else if(p.probe_mode==1){ // if probe is back at home
-						if(p.sampling_point_index==p.num_probes_per_obj){ // if you've done the specified number of probes per object
-							// p.indiv_inspection_complete = true; // inspection for this object is complete
-							p.current_target_id++; // move to the next target ID
-							p.sampling_point_index = 0;
-							p.sampling_points_generated = false; // allows new set of sampling points to be generated for next target
-							ROS_INFO("Block 6");
-							if(p.current_target_id==p.num_targets){
-								p.full_inspection_complete = true;
-								ROS_INFO("Block 7");
-							} 
-						}
-						p.probe_insert_cmd_sent = false; 
-						p.gantry_pos_cmd_sent = false; // change the flag
-					}
-				}
-				break;
-				case true: // all targets have been inspected
-				switch(p.demo_complete){
-					case false:
-					p.printResults();
-                    case true: // do nothing
-                    break;
-                    default:
-                    break;
-                }
-                break;
-                default:
-                break;
-            }
-            break;
-            default:
-            break;
-        }
+		ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
+		ROS_INFO("P Init: %d. P Mode: %d. P at Home: %d. ", p.probes_initialized, p.probe_mode, p.probes_returned_home );
+		ROS_INFO("Targ ID: %d, Targ loc: %d",test_target_id, move_locations.at(test_target_id));
+		if(!p.probe_init_cmd_sent){							
+			p.initializeProbes(); // send the command
+		}
+		
+		p.gantry_pos_cmd = move_locations.at(test_target_id);
+
+		//whether it is supposed to move gantry
+		if(p.probes_initialized && p.gantry_safe_to_move){
+			p.sendGantryPosCmd();
+			ROS_INFO("pos3");
+		}
+
+		//whether it is safe to probe
+		if(p.probes_initialized && p.probes_safe_to_move && !test_complete){
+			p.sendProbeInsertCmd();
+
+		}
 
         ros::spinOnce();
-
         loop_rate.sleep();
     }
+
     return 0;
 }
+
+
+
+
+// vvvv HERE IS THE CODE I HAD ON SATURDAY NIGHT
+
+// int main(int argc, char **argv)
+// {
+// 	ros::init(argc, argv, "probe");
+// 	Probe p;
+// 	ros::Rate loop_rate(10);
+// 	ros::Rate delay(1);
+// 	delay.sleep();
+// 	std::vector<float> sampling_points;
+
+// 	while (ros::ok())
+// 	{
+
+// 		// p.gantry_pos_cmd_actual_delta = (int)p.gantry_carriage_pos-p.gantry_pos_cmd;
+// 		switch(p.both_initialized){
+// 			case false: // if either one of the gantry or probes has not completed initialization
+// 			if (p.gantry_mode==3){ // this becomes true when gantry initialization flag is true // removed else
+// 				if(!p.probe_init_cmd_sent){ // if you haven't sent the command to initialize the probes
+// 					ROS_INFO("Block 1");
+//                     p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
+// 					p.initializeProbes(); // send the command
+// 				}
+// 				else if(p.probes_initialized){ // this becomes true when probe initialization flag is true
+// 					p.both_initialized = true; // initialization of both is complete
+// 					ROS_INFO("Block 2");
+// 				}
+// 			}
+// 			break;
+// 			case true: // when both probes and gantry have been initialized
+// 			switch(p.full_inspection_complete){
+// 				case false: // not all targets have been inspected
+// 				if(!p.sampling_points_generated){
+// 					sampling_points = p.generateSamplingPoints(p.target_x[p.current_target_id]); // create a vector of points around the current target center
+// 					for (int i; i<sampling_points.size();i++){
+// 						ROS_INFO("%f",sampling_points.at(i));
+// 					}
+// 					ROS_INFO("Block 3");
+// 				}
+// 				if(!p.gantry_pos_cmd_sent){ // if you haven't told the gantry to move to the next position
+// 					p.gantry_pos_cmd = 400.0;//(int)(sampling_points[p.sampling_point_index]*1000);
+// 					// p.sendGantryPosCmd(); // send the position command
+// 					p.gantry_send_msg.data.clear(); // flush out previous data
+// 					p.gantry_send_msg.data.push_back(1); // safe to move
+// 					// ROS_INFO("%d", pos);
+// 					int to_send = (int)p.gantry_pos_cmd;
+// 					p.gantry_send_msg.data.push_back(to_send); // input the position [mm]
+// 					// gantry_send_msg.data.push_back(gantry_pos_cmd); // input the position [mm]
+// 					// gantry_cmd_pub.publish(gantry_send_msg); // send the message
+// 					p.gantry_pos_cmd_sent = true; // change the flag
+// 					// delay.sleep();
+// 					p.sampling_point_index++; // go to the next sampling point
+// 					ROS_INFO("Block 4");
+// 				}
+// 				if(p.gantry_pos_cmd_reached){ // when you've reached the desired position
+// 				// if(p.gantry_pos_cmd_actual_delta<=5){ // when you've reached the desired position
+// 					p.sendGantryIdleCmd(); // tell the gantry to stop so that the motor doesn't inadvertently move during probing
+// 					if(!p.probe_insert_cmd_sent){ // if you haven't told the probes to insert
+// 						p.sendProbeInsertCmd(); // tell the probes to insert
+// 						ROS_INFO("Block 5");
+// 					}
+// 					else if(p.probes_returned_home==1){ // if probe is back at home
+// 						if(p.sampling_point_index==p.num_probes_per_obj){ // if you've done the specified number of probes per object
+// 							// p.indiv_inspection_complete = true; // inspection for this object is complete
+// 							p.current_target_id++; // move to the next target ID
+// 							p.sampling_point_index = 0;
+// 							p.sampling_points_generated = false; // allows new set of sampling points to be generated for next target
+// 							ROS_INFO("Block 6");
+// 							if(p.current_target_id==p.num_targets){
+// 								p.full_inspection_complete = true;
+// 								ROS_INFO("Block 7");
+// 							} 
+// 						}
+// 						p.probe_insert_cmd_sent = false; 
+// 						p.gantry_pos_cmd_sent = false; // change the flag
+// 					}
+// 				}
+// 				break;
+// 				case true: // all targets have been inspected
+// 				switch(p.demo_complete){
+// 					case false:
+// 					p.printResults();
+//                     case true: // do nothing
+//                     break;
+//                     default:
+//                     break;
+//                 }
+//                 break;
+//                 default:
+//                 break;
+//             }
+//             break;
+//             default:
+//             break;
+//         }
+
+//         ros::spinOnce();
+// 		ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Sent: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_sent, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
+// 		ROS_INFO("P Init: %d. P Mode: %d. P Ins Cmd Sent: %d. P at Home: %d. P Solid Contact: %d", p.probes_initialized, p.probe_mode, p.probe_insert_cmd_sent, p.probes_returned_home, p.probe_solid_contact );
+// 		ROS_INFO("Current target ID: %d. Sampling point ID: %d", p.current_target_id, p.sampling_point_index);
+//         loop_rate.sleep();
+//     }
+//     return 0;
+// }
+
+
 
 //rosrun rosserial_python serial_node.py _baud:=115200 _port:=/dev/serial/by-id/usb-Arduino__www.arduino.cc__0043_A4139373630351909060-if00
 // rosrun rosserial_python serial_node.py /dev/ttyACM0
@@ -316,9 +407,9 @@ int main(int argc, char **argv)
 // 	int number_locations = 4;
 // 	// move_locations = {.21,.22,.23,.24};
 
-// 	move_locations = {.2,.7,.453,.6};
+// 	move_locations = {200,700,453,433};
 // 	int test_target_id = 0;
-	// std::vector<float> sampling_points;
+// 	std::vector<float> sampling_points;
 // 	bool done = false;
 
 // 	while (ros::ok())
