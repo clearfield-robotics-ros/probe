@@ -241,7 +241,7 @@ void Probe::printResults(){
 	}
 	ROS_INFO("%d out of 3 mines were identified correctly.", mine_correct);
 	ROS_INFO("%d out of 3 non-mines were identified correctly.", nonmine_correct);
-	demo_complete = true;
+	// demo_complete = true;
 	exit;
 }
 

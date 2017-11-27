@@ -178,14 +178,14 @@ bool sendProbeCmd(int cmd);
 void printResults();
 
 // probing parameters
-std::vector<double> target_x = {0.1, 0.25, 0.4, 0.55, 0.7}; // [m]
+std::vector<double> target_x = {0.14, 0.18, 0.39, 0.64}; // [m]
 // std::vector<double> target_x = {0.1}; // [m]
-std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3, 0.3};
+std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3};
 // std::vector<double> target_y = {0.3};
-std::vector<bool> isMine = {1, 1, 1, 0, 0}; // 1 if mine, 0 if non-mine
+std::vector<bool> isMine = {0,1,1,1}; // 1 if mine, 0 if non-mine
 // std::vector<bool> isMine = {0}; // 1 if mine, 0 if non-mine
 int num_probes_per_obj = 4;
-float spacing_between_probes = 0.02; // [m]
+float spacing_between_probes = 0.015; // [m]
 float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
 float max_radius = 0.15; // [m] = 15cm
 
