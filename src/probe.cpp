@@ -12,14 +12,15 @@
 // 	return encoder_counts*probe_lead/(probe_gear_ratio*probe_encoder_count_per_rev);
 // }
 
-std::vector<float> Probe::generateSamplingPoints(float center){
+std::vector<float> Probe::generateSamplingPoints(){
 	std::vector<float> pts;
-	float first_sample_point = center - sample_width/2;
-	for(int i = 0; i<num_probes_per_obj; i++){
-		float x = first_sample_point+spacing_between_probes*i;
-		pts.push_back(x);
+	for(int i = 0; i<target_x.size(); i++){
+		float first_sample_point = target_x.at(i) - sample_width/2;
+		for(int j = 0; j<num_probes_per_obj; j++){
+			float x = first_sample_point+spacing_between_probes*j;
+			pts.push_back(x);
+		}
 	}
-	sampling_points_generated = true;
 	return pts;
 }
 
@@ -125,20 +126,17 @@ Probe::circle Probe::classify(const std::vector<geometry_msgs::PointStamped>& pt
 // Initialization functions
 
 void Probe::initializeGantry(){
-	gantry_send_msg.data.clear(); // flush out previous data
+	// gantry_send_msg.data.clear(); // flush out previous data
 
-	gantry_send_msg.data.push_back(1); // change it to initialize mode
-	gantry_send_msg.data.push_back(0); // change it to initialize mode
+	// gantry_send_msg.data.push_back(1); // change it to initialize mode
+	// gantry_send_msg.data.push_back(0); // change it to initialize mode
 
-	gantry_cmd_pub.publish(gantry_send_msg);
-	gantry_init_cmd_sent = true;
+	// gantry_cmd_pub.publish(gantry_send_msg);
+	// gantry_init_cmd_sent = true;
 }
 
 void Probe::initializeProbes(){
 	probe_send_msg.data = probe_initialize_cmd;
-	// std_msgs::Int16 num;
-	// num.data = 3;
-	// probe_cmd_pub.publish(num);
 	probe_cmd_pub.publish(probe_send_msg);
 	probe_init_cmd_sent = true;
 }
@@ -147,25 +145,23 @@ void Probe::initializeProbes(){
 
 void Probe::sendGantryPosCmd(){
 
-	ROS_INFO("%d sent to gantry", gantry_pos_cmd);
+	ROS_INFO("%f sent to gantry", gantry_pos_cmd);
 
 	gantry_handshake = false;
 	gantry_command_arrived = false;
 
+	ROS_INFO("gantry pos cmd: %d",(int)gantry_pos_cmd*1000);
 	gantry_send_msg.data.clear(); // flush out previous data
-	if(gantry_safe_to_move){	
+	// if(gantry_safe_to_move){	
 		gantry_send_msg.data.push_back(1); // safe to move
-		gantry_send_msg.data.push_back(gantry_pos_cmd); // input the position [mm]
-	} else {	
-		gantry_send_msg.data.push_back(0); // not safe to move
-		gantry_send_msg.data.push_back(0); // input the position [mm]
-	}
+		gantry_send_msg.data.push_back((int)(gantry_pos_cmd*1000)); // input the position [mm]
+	// } else {	
+	// 	gantry_send_msg.data.push_back(0); // not safe to move
+	// 	gantry_send_msg.data.push_back(0); // input the position [mm]
+	// }
 
 	gantry_cmd_pub.publish(gantry_send_msg); // send the message
-	gantry_pos_cmd_sent = true; // change the flag
-
-	// gantry_safe_to_move = true;
-	// probes_safe_to_move = false;
+	// gantry_pos_cmd_sent = true; // change the flag
 }
 
 void Probe::sendGantryIdleCmd(){
@@ -176,17 +172,8 @@ void Probe::sendGantryIdleCmd(){
 }
 
 void Probe::sendProbeInsertCmd(){
-	// if(probes_safe_to_move){
-		probe_send_msg.data = probe_insert_cmd; // change it to probe mode
-	// } else {
-	// 	probe_send_msg.data = probe_idle_cmd; // change it to probe mode
-	// }
+	probe_send_msg.data = probe_insert_cmd; // change it to probe mode
 	probe_cmd_pub.publish(probe_send_msg); // send the message
-	// probe_insert_cmd_sent = true; // change the flag
-
-	//
-	// gantry_safe_to_move = false;
-	// probes_safe_to_move = true;
 }
 
 bool Probe::sendProbeCmd(int cmd) {
@@ -204,18 +191,23 @@ void Probe::printResults(){
 	int nonmine_correct = 0;
 	int nonmine_incorrect = 0;
 	bool guess;
+	ROS_INFO("1");
 	for (int i = 0; i<num_targets; i++){
 		std::vector<geometry_msgs::PointStamped> pts; // (should overwrite with every new i)
+	ROS_INFO("2");
 		int num_valid_points = 0;
+	ROS_INFO("3");
 
 		for (int j = 0; j<num_probes_per_obj; j++){
+	ROS_INFO("4");
 			bool valid_point = contact_type.at(num_probes_per_obj*i+j);
 			if (valid_point){ // if the point is valid (i.e. not at end stops)
+	ROS_INFO("5");
 				pts.push_back(contact_points.at(num_probes_per_obj*i+j)); // only put valid points in vector
 				num_valid_points++;
 			}
 		}
-												ROS_INFO("nvp: %d", num_valid_points);
+		ROS_INFO("nvp: %d", num_valid_points);
 
 		if (num_valid_points>=3){ // if you've got enough points to meaningfully classify with
 			circle circle = classify(pts);
@@ -226,7 +218,6 @@ void Probe::printResults(){
 				(guess==isMine.at(i)) ? mine_correct++ : mine_incorrect++;
 			}
 		} else guess = false; // if you didn't hit 3 points then you can't classify it
-										ROS_INFO("Block 9");
 
 		// } else if (num_valid_points>0 && num_valid_points<3){ // if you have 1 or 2 points
 		// 	ROS_INFO("Object %d is solid but there is not enough information to work out if is a landmine.", i+1);
@@ -241,6 +232,7 @@ void Probe::printResults(){
 	ROS_INFO("%d out of 3 mines were identified correctly.", mine_correct);
 	ROS_INFO("%d out of 3 non-mines were identified correctly.", nonmine_correct);
 	demo_complete = true;
+	exit;
 }
 
 int main(int argc, char **argv)
@@ -251,13 +243,7 @@ int main(int argc, char **argv)
 	ros::Rate delay(1);
 	delay.sleep();
 
-	std::vector<int> move_locations;
-	int number_locations = 4;
-
-	move_locations = {200,300,400,500};
-	int test_target_id = 0;
-
-	bool test_complete = false;
+	std::vector<float> sampling_points = p.generateSamplingPoints();
 
 	p.sendProbeCmd(3); // init probes
 	ros::spinOnce();
@@ -270,23 +256,24 @@ int main(int argc, char **argv)
 		if (p.probe_handshake) p.probe_command_arrived = true;
 		if (p.gantry_handshake) p.gantry_command_arrived = true;
 
-		ROS_INFO("command received: %d. P Mode: %d. P Init: %d. G safe to move: %d. ", 
-			p.probe_command_arrived, p.probe_mode, p.probes_initialized, p.gantry_safe_to_move );
+		ROS_INFO("command received: %d. P Mode: %d. P Init: %d.", 
+			p.probe_command_arrived, p.probe_mode, p.probes_initialized);
 
 		ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", 
-				p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
-		// ROS_INFO("Targ ID: %d, Targ loc: %d",test_target_id, move_locations.at(test_target_id));
+			p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
+		ROS_INFO("Targ ID: %d",p.sampling_point_index);//, sampling_points.at(p.sampling_point_index));
 
-		if (p.probe_command_arrived && p.gantry_command_arrived)
+		if (p.probe_command_arrived && p.gantry_command_arrived && p.probes_initialized)
 		{
+			if (p.probe_mode == 1 && !blockGantry) {
 
-			// ready to move gantry
-			if (p.probes_initialized && p.probe_mode == 1 && !blockGantry) {
+				p.gantry_pos_cmd = sampling_points.at(p.sampling_point_index);
 
-				p.gantry_pos_cmd = move_locations.at(test_target_id);
-				
-				test_target_id++;
-				if (test_target_id > (number_locations-1)) test_target_id = (number_locations-1);
+				p.sampling_point_index++;
+				if (p.sampling_point_index > (p.total_num_samples-1)) {
+					p.sampling_point_index = (p.total_num_samples-1);
+					p.printResults();
+				}
 
 				p.sendGantryPosCmd();
 				blockGantry = true;
@@ -298,13 +285,12 @@ int main(int argc, char **argv)
 				blockProbe = true;
 				blockGantry = false;
 			}
-
 		}
-        ros::spinOnce();
-        loop_rate.sleep();
-    }
+		ros::spinOnce();
+		loop_rate.sleep();
+	}
 
-    return 0;
+	return 0;
 }
 
 
@@ -319,7 +305,6 @@ int main(int argc, char **argv)
 // 	ros::Rate loop_rate(10);
 // 	ros::Rate delay(1);
 // 	delay.sleep();
-// 	std::vector<float> sampling_points;
 
 // 	while (ros::ok())
 // 	{

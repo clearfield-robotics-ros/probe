@@ -51,10 +51,10 @@ void probeStatusClbk(const std_msgs::Int16MultiArray& msg){
 	// probe_cycle_complete = (bool)msg.data.at(2);
 	probe_solid_contact = (bool)msg.data.at(4);
 	// ROS_INFO("Probe mode: %d, Initialized: %d, Carriage pos: %f", probe_mode, probes_initialized, probe_carriage_pos);
-	probe_mode == 1 ? gantry_safe_to_move = true : gantry_safe_to_move = false;
+	// probe_mode == 1 ? gantry_safe_to_move = true : gantry_safe_to_move = false;
 
-	if (probe_mode==2) {outbound = true; inbound = false;}
-	if (probe_mode==0) {inbound = true; outbound = false;}
+	// if (probe_mode==2) {outbound = true; inbound = false;}
+	// if (probe_mode==0) {inbound = true; outbound = false;}
 }
 
 void probeContactClbk(const std_msgs::Int16MultiArray& msg){
@@ -66,7 +66,7 @@ void probeContactClbk(const std_msgs::Int16MultiArray& msg){
 	else{
 		probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
 		probe_solid_contact = (bool)msg.data.at(4);
-		// ROS_INFO("%f", probe_carriage_pos);
+		ROS_INFO("Probe carriage pos: %f. Probe solid contact: %d", probe_carriage_pos, probe_solid_contact);
 		probe_tip.setOrigin( tf::Vector3(0,0.485+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
 		probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 		br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
@@ -97,7 +97,7 @@ void gantryStatusClbk(const std_msgs::Int16MultiArray& msg) {
     gantry_carriage.setOrigin( tf::Vector3(0.09+gantry_carriage_pos,-0.13,0.365)); // update origin of gantry carriage coordinate frame
 	gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
     br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
-	(gantry_pos_cmd_reached) ? probes_safe_to_move = true : probes_safe_to_move = false;
+	// (gantry_pos_cmd_reached) ? probes_safe_to_move = true : probes_safe_to_move = false;
 }
 
 struct point2D { float x, y; };
@@ -137,7 +137,7 @@ std::vector<bool> contact_type;
 
 // float calculateProbeExtension(float encoder_counts);
 
-std::vector<float> generateSamplingPoints(float center);
+std::vector<float> generateSamplingPoints();
 
 // Shape classification functions
 
@@ -168,19 +168,23 @@ bool sendProbeCmd(int cmd);
 void printResults();
 
 // probing parameters
-std::vector<double> target_x = {0.6};//{0.2, 0.3, 0.4, 0.5, 0.6, 0.7}; // [m]
-std::vector<double> target_y = {0.35};//{0.3, 0.3, 0.3, 0.3, 0.3, 0.3};
-std::vector<bool> isMine = {1};  //  {1, 1, 1, 0, 0, 0}; // 1 if mine, 0 if non-mine
+// std::vector<double> target_x = {0.1, 0.25, 0.4, 0.55, 0.7}; // [m]
+std::vector<double> target_x = {0.1}; // [m]
+// std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3, 0.3};
+std::vector<double> target_y = {0.3};
+// std::vector<bool> isMine = {1, 1, 1, 0, 0}; // 1 if mine, 0 if non-mine
+std::vector<bool> isMine = {0}; // 1 if mine, 0 if non-mine
 int num_probes_per_obj = 4;
-float spacing_between_probes = 0.03; // [m] = 2cm
+float spacing_between_probes = 0.02; // [m]
 float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
 float max_radius = 0.15; // [m] = 15cm
 
 int num_targets = target_x.size();
-int current_target_id = 0;
+// int current_target_id = 0;
 int sampling_point_index = 0;
-bool sampling_points_generated = false;
-bool full_inspection_complete = false;
+int total_num_samples = num_probes_per_obj*num_targets;
+// bool sampling_points_generated = false;
+// bool full_inspection_complete = false;
 
 // locations of gantry and probe carriages
 float probe_carriage_pos;
@@ -201,7 +205,7 @@ bool gantry_handshake = 		false;
 bool gantry_command_arrived = 	true;
 
 // initialization flags
-bool both_initialized =         false; // both probes and gantry
+// bool both_initialized =         false; // both probes and gantry
 
 bool gantry_initialized =       false;
 bool gantry_init_cmd_sent =     false;
@@ -217,11 +221,11 @@ bool probe_solid_contact =      false;
 bool demo_complete =            false;
 bool ready_for_next_probe =		false;
 
-int gantry_pos_cmd_actual_delta=0;
-bool gantry_safe_to_move = false;
-bool probes_safe_to_move = false;
-bool inbound = false;
-bool outbound = false;
+// int gantry_pos_cmd_actual_delta=0;
+// bool gantry_safe_to_move = false;
+// bool probes_safe_to_move = false;
+// bool inbound = false;
+// bool outbound = false;
 float gantry_pos_cmd = 0;
 
 private:
