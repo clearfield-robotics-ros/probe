@@ -254,50 +254,72 @@ int main(int argc, char **argv)
 	delay.sleep();
 
 	std::vector<float> sampling_points = p.generateSamplingPoints();
-	ROS_INFO("%d targets, each with %d sampling points, for a total of %d probes", p.num_targets, p.num_probes_per_obj, p.num_targets*p.num_probes_per_obj);
-	p.sendProbeCmd(3); // init probes
-
-	ros::spinOnce();
+	ROS_INFO("%d targets, each with %d sampling points, for a total of %d probes", 
+		p.num_targets, p.num_probes_per_obj, p.num_targets*p.num_probes_per_obj);
 
 	bool blockGantry = false;
 	bool blockProbe = false;
 
 	while (ros::ok())
 	{
+		/*** GANTRY CALIBRATION ***/
+		if (p.gantry_initialized == 0) {
+			ROS_INFO("Waiting for Gantry to Calibrate...");
+		}
+		else {
+			p.updateGantryState();
+			if (p.probe_handshake) p.probe_command_arrived = true;
+			if (p.gantry_handshake) p.gantry_command_arrived = true;
 
-		p.updateGantryState();
+			if (p.probe_command_arrived && p.gantry_command_arrived)
+			{
+				/*** PROBE CALIBRATION ***/
+				if (!p.probes_initialized){
 
-		if (p.probe_handshake) p.probe_command_arrived = true;
-		if (p.gantry_handshake) p.gantry_command_arrived = true;
-
-		ROS_INFO("command received: %d. P Mode: %d. P Init: %d.", 
-			p.probe_command_arrived, p.probe_mode, p.probes_initialized);
-
-		ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", 
-			p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
-		ROS_INFO("After this probe, the next sampling point is: %d", p.sampling_point_index);//, sampling_points.at(p.sampling_point_index));
-
-		if (p.probe_command_arrived && p.gantry_command_arrived && p.probes_initialized)
-		{
-			if (p.probe_mode == 1 && !blockGantry) {
-
-				p.gantry_pos_cmd = sampling_points.at(p.sampling_point_index);
-
-				p.sampling_point_index++;
-				if (p.sampling_point_index > (p.total_num_samples-1)) {
-					p.sampling_point_index = (p.total_num_samples-1);
-					p.printResults();
+					if (p.probe_mode == 1 && !blockGantry) {
+						p.gantry_pos_cmd = p.probe_calibration_position;
+						p.sendGantryPosCmd();
+						blockGantry = true;
+						blockProbe = false;
+					}
+					else if (p.gantry_pos_cmd_reached && !blockProbe) {
+						p.sendProbeCmd(3);
+						blockProbe = true;
+						blockGantry = false;
+					}
 				}
+				/*** NORMAL OPERATION ***/
+				else {
+					ROS_INFO("command received: %d. P Mode: %d. P Init: %d.", 
+						p.probe_command_arrived, p.probe_mode, p.probes_initialized);
 
-				p.sendGantryPosCmd();
-				blockGantry = true;
-				blockProbe = false;
-			}
+					ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", 
+						p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
+					ROS_INFO("After this probe, the next sampling point is: %d", p.sampling_point_index);//, sampling_points.at(p.sampling_point_index));
 
-			else if (p.gantry_pos_cmd_reached && !blockProbe) {
-				p.sendProbeCmd(2);
-				blockProbe = true;
-				blockGantry = false;
+					if (p.probe_mode == 1 && !blockGantry) {
+
+						p.gantry_pos_cmd = sampling_points.at(p.sampling_point_index);
+
+						p.sampling_point_index++;
+
+						/*** EXIT CONDITION ***/
+						if (p.sampling_point_index > (p.total_num_samples-1)) {
+							p.sampling_point_index = (p.total_num_samples-1);
+							p.printResults();
+						}
+
+						p.sendGantryPosCmd();
+						blockGantry = true;
+						blockProbe = false;
+					}
+
+					else if (p.gantry_pos_cmd_reached && !blockProbe) {
+						p.sendProbeCmd(2);
+						blockProbe = true;
+						blockGantry = false;
+					}
+				}
 			}
 		}
 		ros::spinOnce();

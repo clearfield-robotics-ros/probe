@@ -178,6 +178,8 @@ bool sendProbeCmd(int cmd);
 void printResults();
 
 // probing parameters
+float probe_calibration_position = 0.05f;
+
 std::vector<double> target_x = {0.14, 0.18, 0.39, 0.64}; // [m]
 // std::vector<double> target_x = {0.1}; // [m]
 std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3};
