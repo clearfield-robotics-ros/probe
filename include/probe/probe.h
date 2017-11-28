@@ -42,7 +42,7 @@ void probeStatusClbk(const std_msgs::Int16MultiArray& msg){
 
 	probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
 
-	probe_tip.setOrigin( tf::Vector3(0,0.485+probe_carriage_pos,0)); // update origin of probe tip coordinate frame [m]
+	probe_tip.setOrigin( tf::Vector3(0,0.075+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
 	probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 	br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 
@@ -66,12 +66,12 @@ void probeContactClbk(const std_msgs::Int16MultiArray& msg){
 	else{
 		probe_carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
 		probe_solid_contact = (bool)msg.data.at(4);
-		ROS_INFO("Probe carriage pos: %f. Probe solid contact: %d", probe_carriage_pos, probe_solid_contact);
-		probe_tip.setOrigin( tf::Vector3(0,0.485+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
+		// ROS_INFO("Probe carriage pos: %f. Probe solid contact: %d", probe_carriage_pos, probe_solid_contact);
+		probe_tip.setOrigin( tf::Vector3(0,0.075+probe_carriage_pos,0)); // update origin of probe tip coordinate frame
 		probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 		br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 		tf::StampedTransform probe_tf;
-		probe_listener.lookupTransform("probe_tip","base_link",ros::Time(0),probe_tf);
+		probe_listener.lookupTransform("base_link","probe_tip",ros::Time(0),probe_tf);
 		geometry_msgs::PointStamped cp; // single contact point (cp)
 		tf::Vector3 probe_tip_origin;
 		probe_tip_origin = probe_tf.getOrigin();
@@ -79,6 +79,7 @@ void probeContactClbk(const std_msgs::Int16MultiArray& msg){
 		cp.point.y = probe_tip_origin.y();
 		cp.point.z = probe_tip_origin.z();
 		probe_contact_pub.publish(cp); // publish to save in rosbag
+		ROS_INFO("Contact X: %fm. Contact Y: %fm. Contact Z: %fm",cp.point.x, cp.point.y, cp.point.z);
 		contact_points.push_back(cp); // save into vector for internal processing
 		contact_type.push_back(probe_solid_contact);
 	}
@@ -180,11 +181,12 @@ void printResults();
 // probing parameters
 float probe_calibration_position = 0.05f; // relative to gantry
 
-std::vector<double> target_x = {0.14, 0.18, 0.39, 0.64}; // [m]
-// std::vector<double> target_x = {0.1}; // [m]
-std::vector<double> target_y = {0.3, 0.3, 0.3, 0.3};
-// std::vector<double> target_y = {0.3};
-std::vector<bool> isMine = {0,1,1,1}; // 1 if mine, 0 if non-mine
+// std::vector<double> target_x = {0.2, 0.41, 0.65}; // [m]
+std::vector<double> target_x = {0.695}; // [m]
+// std::vector<double> target_y = {0.38, 0.34, 0.34};
+std::vector<double> target_y = {0.34};
+// std::vector<bool> isMine = {1,1,1}; // 1 if mine, 0 if non-mine
+std::vector<bool> isMine = {1}; // 1 if mine, 0 if non-mine
 // std::vector<bool> isMine = {0}; // 1 if mine, 0 if non-mine
 int num_probes_per_obj = 4;
 float spacing_between_probes = 0.015; // [m]

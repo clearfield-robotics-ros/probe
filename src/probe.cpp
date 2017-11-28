@@ -145,7 +145,7 @@ void Probe::initializeProbes(){
 
 void Probe::sendGantryPosCmd(){
 
-	ROS_INFO("%f sent to gantry", gantry_pos_cmd);
+	// ROS_INFO("%f sent to gantry", gantry_pos_cmd);
 
 	gantry_handshake = false;
 	gantry_command_arrived = false;
@@ -185,7 +185,7 @@ void Probe::sendProbeInsertCmd(){
 }
 
 bool Probe::sendProbeCmd(int cmd) {
-	ROS_INFO("cmd_%d sent to probes", cmd);
+	// ROS_INFO("cmd_%d sent to probes", cmd);
 	desired_probe_mode = cmd;
 	probe_handshake = false;
 	probe_command_arrived = false;
@@ -194,37 +194,38 @@ bool Probe::sendProbeCmd(int cmd) {
 }
 
 void Probe::printResults(){
+	// ros::Rate delay(.5);
+	// delay.sleep();
 	int mine_correct = 0;
 	int mine_incorrect = 0;
 	int nonmine_correct = 0;
 	int nonmine_incorrect = 0;
 	bool guess;
-	ROS_INFO("1");
+	ROS_INFO("contact points size: %d", contact_points.size());
 	for (int i = 0; i<num_targets; i++){
 		std::vector<geometry_msgs::PointStamped> pts; // (should overwrite with every new i)
-		ROS_INFO("2");
 		int num_valid_points = 0;
-		ROS_INFO("3");
-
-
 
 		for (int j = 0; j<num_probes_per_obj; j++){
 			ROS_INFO("i = %d, j = %d", i,j); // was ROS_INFO("4");
 			bool valid_point = contact_type.at(num_probes_per_obj*i+j);
+						ROS_INFO("valid_point = %d",valid_point); // was ROS_INFO("4");
 			if (valid_point){ // if the point is valid (i.e. not at end stops)
-				ROS_INFO("5");
+										ROS_INFO("valid_point inside"); // was ROS_INFO("4");
+
 				pts.push_back(contact_points.at(num_probes_per_obj*i+j)); // only put valid points in vector
 				num_valid_points++;
 			}
 		}
-		ROS_INFO("nvp: %d", num_valid_points);
+		ROS_INFO("Number of valid points: %d", num_valid_points);
 
 		if (num_valid_points>=3){ // if you've got enough points to meaningfully classify with
 			circle circle = classify(pts);
+		ROS_INFO("Calculated center at: X = %fm. Y = %fm. Radius = %fm", circle.center.x, circle.center.y, circle.rad);
 			(circle.rad<=max_radius) ? guess = true : guess = false; // check against radius threshold
 			if(guess){ // if it is a mine, calculate its center and its distance to the actual location
 				float dist = sqrt(pow(target_x.at(i)-circle.center.x,2)+pow(target_y.at(i)-circle.center.y,2));
-				ROS_INFO("Object %d is a landmine. Calculated center is %fcm away from actual location.", i+1, dist);
+				ROS_INFO("Object %d is a landmine. Calculated center is %fcm away from actual location.", i+1, dist*100);
 				(guess==isMine.at(i)) ? mine_correct++ : mine_incorrect++;
 			}
 		} else guess = false; // if you didn't hit 3 points then you can't classify it
@@ -239,8 +240,8 @@ void Probe::printResults(){
 			(guess==isMine.at(i)) ? nonmine_correct++ : nonmine_incorrect++;
 		}
 	}
-	ROS_INFO("%d out of 3 mines were identified correctly.", mine_correct);
-	ROS_INFO("%d out of 3 non-mines were identified correctly.", nonmine_correct);
+	// ROS_INFO("%d out of 3 mines were identified correctly.", mine_correct);
+	// ROS_INFO("%d out of 3 non-mines were identified correctly.", nonmine_correct);
 	// demo_complete = true;
 	exit;
 }
@@ -290,12 +291,12 @@ int main(int argc, char **argv)
 				}
 				/*** NORMAL OPERATION ***/
 				else {
-					ROS_INFO("command received: %d. P Mode: %d. P Init: %d.", 
-						p.probe_command_arrived, p.probe_mode, p.probes_initialized);
+					// ROS_INFO("command received: %d. P Mode: %d. P Init: %d.", 
+					// 	p.probe_command_arrived, p.probe_mode, p.probes_initialized);
 
-					ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", 
-						p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
-					ROS_INFO("After this probe, the next sampling point is: %d", p.sampling_point_index);//, sampling_points.at(p.sampling_point_index));
+					// ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", 
+					// 	p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
+					// ROS_INFO("After this probe, the next sampling point is: %d", p.sampling_point_index);//, sampling_points.at(p.sampling_point_index));
 
 					if (p.probe_mode == 1 && !blockGantry) {
 
@@ -304,8 +305,8 @@ int main(int argc, char **argv)
 						p.sampling_point_index++;
 
 						/*** EXIT CONDITION ***/
-						if (p.sampling_point_index > (p.total_num_samples-1)) {
-							p.sampling_point_index = (p.total_num_samples-1);
+						if (p.sampling_point_index > (p.total_num_samples)) {
+							// p.sampling_point_index = (p.total_num_samples-1);
 							p.printResults();
 						}
 
