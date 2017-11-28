@@ -251,7 +251,7 @@ int main(int argc, char **argv)
 	Probe p;
 	ros::Rate loop_rate(10);
 	ros::Rate delay(1);
-	delay.sleep();
+	delay.sleep(); // don't miss first command!
 
 	std::vector<float> sampling_points = p.generateSamplingPoints();
 	ROS_INFO("%d targets, each with %d sampling points, for a total of %d probes", 
