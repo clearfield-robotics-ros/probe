@@ -182,16 +182,16 @@ void printResults();
 float probe_calibration_position = 0.05f; // relative to gantry
 
 // std::vector<double> target_x = {0.2, 0.41, 0.65}; // [m]
-std::vector<double> target_x = {0.695}; // [m]
+std::vector<double> target_x = {.2,.375,.535,0.695}; // [m]
 // std::vector<double> target_y = {0.38, 0.34, 0.34};
-std::vector<double> target_y = {0.34};
+std::vector<double> target_y = {.34,0.34,.34,.34};
 // std::vector<bool> isMine = {1,1,1}; // 1 if mine, 0 if non-mine
-std::vector<bool> isMine = {1}; // 1 if mine, 0 if non-mine
+std::vector<bool> isMine = {0,1,1,1}; // 1 if mine, 0 if non-mine
 // std::vector<bool> isMine = {0}; // 1 if mine, 0 if non-mine
-int num_probes_per_obj = 4;
-float spacing_between_probes = 0.015; // [m]
+int num_probes_per_obj = 8;
+float spacing_between_probes = 0.01; // [m]
 float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
-float max_radius = 0.15; // [m] = 15cm
+float max_radius = 0.1; // [m] = 15cm
 
 int num_targets = target_x.size();
 // int current_target_id = 0;

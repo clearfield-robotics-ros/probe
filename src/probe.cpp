@@ -194,8 +194,8 @@ bool Probe::sendProbeCmd(int cmd) {
 }
 
 void Probe::printResults(){
-	// ros::Rate delay(.5);
-	// delay.sleep();
+	ros::Rate delay(.5);
+	delay.sleep();
 	int mine_correct = 0;
 	int mine_incorrect = 0;
 	int nonmine_correct = 0;
@@ -243,7 +243,7 @@ void Probe::printResults(){
 	// ROS_INFO("%d out of 3 mines were identified correctly.", mine_correct);
 	// ROS_INFO("%d out of 3 non-mines were identified correctly.", nonmine_correct);
 	// demo_complete = true;
-	exit;
+	// ros::shutdown();
 }
 
 int main(int argc, char **argv)
@@ -260,8 +260,9 @@ int main(int argc, char **argv)
 
 	bool blockGantry = false;
 	bool blockProbe = false;
+	bool finished = false;
 
-	while (ros::ok())
+	while (ros::ok() && !finished)
 	{
 		/*** GANTRY CALIBRATION ***/
 		if (p.gantry_initialized == 0) {
@@ -299,20 +300,27 @@ int main(int argc, char **argv)
 					// ROS_INFO("After this probe, the next sampling point is: %d", p.sampling_point_index);//, sampling_points.at(p.sampling_point_index));
 
 					if (p.probe_mode == 1 && !blockGantry) {
-
-						p.gantry_pos_cmd = sampling_points.at(p.sampling_point_index);
-
-						p.sampling_point_index++;
-
+						ROS_INFO("sampling_point_index = %d", p.sampling_point_index);
 						/*** EXIT CONDITION ***/
-						if (p.sampling_point_index > (p.total_num_samples)) {
-							// p.sampling_point_index = (p.total_num_samples-1);
+						if (p.sampling_point_index >= (p.total_num_samples)) {
+							ROS_INFO("here4"); // was ROS_INFO("4");
+
+							// p.sampling_point_index = (p.total_num_samples);
+							ROS_INFO("here5"); // was ROS_INFO("4");
+
 							p.printResults();
+							finished = true;
+						}
+						else {
+														ROS_INFO("here6"); // was ROS_INFO("4");
+
+							p.gantry_pos_cmd = sampling_points.at(p.sampling_point_index);
+							p.sampling_point_index++;
+							p.sendGantryPosCmd();
+							blockGantry = true;
+							blockProbe = false;
 						}
 
-						p.sendGantryPosCmd();
-						blockGantry = true;
-						blockProbe = false;
 					}
 
 					else if (p.gantry_pos_cmd_reached && !blockProbe) {
