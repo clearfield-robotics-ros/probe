@@ -38,7 +38,7 @@ public:
 	Landmine landmine;
 
 	int sampling_point_index;
-	const int num_probes_per_obj = 8;
+	const int num_probes_per_obj = 5;
 	const float spacing_between_probes = 0.01; // [m]
 	const float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
 	const float max_radius = 0.1; // [m] = 15cm
@@ -58,6 +58,8 @@ public:
 
 	ros::Publisher probe_contact_pub;
 
+	ros::Publisher vis_pub;
+
 	// transforms
 	tf::TransformBroadcaster br;
 
@@ -73,6 +75,8 @@ public:
 
 	Landmine_Classifier()
 	{
+		vis_pub = n.advertise<visualization_msgs::Marker>( "visualization_marker", 0 );
+
 		probe_status_sub = n.subscribe("probe_t/probe_status_reply", 1000, &Landmine_Classifier::probeStatusClbk, this);
 		probe_contact_sub = n.subscribe("probe_t/probe_contact_reply", 1000, &Landmine_Classifier::probeContactClbk, this);
 		gantry_status_sub = n.subscribe("gantry/gantryStat", 1000, &Landmine_Classifier::gantryStatusClbk, this);
@@ -144,6 +148,8 @@ public:
 		landmine.x_truth = _x;
 		landmine.y_truth = _y;
 		landmine.radius_truth = _radius;
+
+		// visualizeLandmineTruth();
 
 		sampling_point_index = 0;
 
@@ -285,6 +291,7 @@ public:
 		else guess = false; // if you didn't hit 3 points then you can't classify it
 
 		printResults(landmineCount);
+		if (guess) visualizeLandmineEstimate(landmineCount);
 	}
 
 	void printResults(int landmineCount) {
@@ -320,6 +327,33 @@ public:
 		}
 
 		printf("\n\t--------------------------------\n\n");
+	}
+
+	void visualizeLandmineEstimate(int landmineCount) {
+		visualization_msgs::Marker marker;
+		marker.header.frame_id = "base_link";
+		marker.header.stamp = ros::Time();
+		marker.ns = "my_namespace";
+		marker.id = landmineCount;
+		marker.type = visualization_msgs::Marker::CYLINDER;
+		marker.action = visualization_msgs::Marker::ADD;
+		marker.pose.position.x = landmine.x_est;
+		marker.pose.position.y = landmine.y_est;
+		marker.pose.position.z = 0;
+		marker.pose.orientation.x = 0.0;
+		marker.pose.orientation.y = 0.0;
+		marker.pose.orientation.z = 0.0;
+		marker.pose.orientation.w = 1.0;
+		marker.scale.x = 2*landmine.radius_est;
+		marker.scale.y = 2*landmine.radius_est;
+		marker.scale.z = 0.05;
+		marker.color.a = 1.0; // Don't forget to set the alpha!
+		marker.color.r = 1.0;
+		marker.color.g = 0.5;
+		marker.color.b = 0.5;
+		//only if using a MESH_RESOURCE marker type:
+		marker.mesh_resource = "package://pr2_description/meshes/base_v0/base.dae";
+		vis_pub.publish( marker );
 	}
 
 private:
