@@ -52,8 +52,6 @@ public:
 		command_arrived = false;
 		probe_send_msg.data = cmd; // change it to probe mode
 
-		ROS_INFO("Publish Probe Cmd");
-
 		probe_cmd_pub.publish(probe_send_msg); // send the message
 	}
 

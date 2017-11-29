@@ -5,15 +5,8 @@
 
 #define M_PI 3.14159265358979323846
 
-void ros_debug () {
-	// ROS_INFO("command received: %d. P Mode: %d. P Init: %d.", 
-	// 	p.probe_command_arrived, p.probe_mode, p.probes_initialized);
-
-	// ROS_INFO("G Init: %d. G Mode: %d. G Pos Cmd Reached: %d. G Pos Cmd: %f. G Pos Act: %f", 
-	// 	p.gantry_initialized, p.gantry_mode, p.gantry_pos_cmd_reached, p.gantry_pos_cmd, p.gantry_carriage_pos);
-	// ROS_INFO("After this probe, the next sampling point is: %d", p.sampling_point_index);//, sampling_points.at(p.sampling_point_index));
-}
-
+std::vector<double> target_x = {.2,.6}; // {.2,.375,.535,0.695}; // [m]
+std::vector<double> target_y = {.34,.34}; //{.34,.34,.34,.34};
 
 int main(int argc, char **argv) {
 
@@ -26,10 +19,14 @@ int main(int argc, char **argv) {
 	ros::Rate delay(1);
 	delay.sleep(); // don't miss first command!
 
-	std::vector<float> sampling_points = mine.generateSamplingPoints();
 
-	ROS_INFO("%d targets, each with %d sampling points, for a total of %d probes", 
-		mine.num_targets, mine.num_probes_per_obj, mine.num_targets*mine.num_probes_per_obj);
+
+	int landmine_index = 0;
+	std::vector<float> sampling_points = 
+		mine.generateSamplingPoints(target_x.at(landmine_index), 
+									target_y.at(landmine_index));
+	ROS_INFO("%lu probe points generated for target at x = %f, y = %f", 
+		sampling_points.size(),target_x.at(landmine_index),target_y.at(landmine_index)); 
 
 	bool blockGantry = false;
 	bool blockProbe = false;
@@ -65,15 +62,26 @@ int main(int argc, char **argv) {
 				}
 				/*** NORMAL OPERATION ***/
 				else {
-
-					// ros_debug();
-
 					if (probe.mode == 1 && !blockGantry) {
 
-						/*** EXIT CONDITION ***/
-						if (mine.sampling_point_index >= (mine.total_num_samples)) {
+						/*** FINISHED ONE ***/
+						if (mine.sampling_point_index >= mine.num_probes_per_obj) {
+
 							mine.printResults();
-							finished = true;
+							delay.sleep(); // wait 1 second
+
+							landmine_index++;
+
+							if (landmine_index < target_x.size()){
+								sampling_points = mine.generateSamplingPoints(target_x.at(landmine_index), 
+																			  target_y.at(landmine_index)); 
+								ROS_INFO("%lu probe points generated", sampling_points.size()); 
+							}
+							/*** FINISHED ALL ***/
+							else {
+								ROS_INFO("Finished probing all objects..."); 
+								finished = true;
+							}
 						}
 						else {
 							gantry.pos_cmd = sampling_points.at(mine.sampling_point_index);

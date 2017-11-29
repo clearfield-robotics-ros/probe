@@ -11,9 +11,13 @@
 #include "std_msgs/MultiArrayLayout.h"
 #include "geometry_msgs/PointStamped.h"
 
+#include <visualization_msgs/Marker.h>
+
 class Landmine_Classifier
 {
 public:
+
+	// struct 
 
 	// locations of gantry and probe carriages
 	float carriage_pos;
@@ -88,12 +92,19 @@ public:
 
 			// ROS_INFO("Probe carriage pos: %f. Probe solid contact: %d", probe_carriage_pos, probe_solid_contact);
 			probe_tip.setOrigin( tf::Vector3(0,0.075+carriage_pos,0)); // update origin of probe tip coordinate frame
+			
 			probe_tip.setRotation(tf::Quaternion(0,0,0,1));
+			
 			br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
+			
 			tf::StampedTransform probe_tf;
+			
 			probe_listener.lookupTransform("base_link","probe_tip",ros::Time(0),probe_tf);
+			
 			geometry_msgs::PointStamped cp; // single contact point (cp)
+			
 			tf::Vector3 probe_tip_origin;
+			
 			probe_tip_origin = probe_tf.getOrigin();
 			cp.point.x = probe_tip_origin.x();
 			cp.point.y = probe_tip_origin.y();
@@ -101,6 +112,7 @@ public:
 
 			// probe_contact_pub.publish(cp); // publish to save in rosbag - CAUSING CRASH?
 
+			/*** CLASSIFICATION ***/
 			ROS_INFO("Contact X: %fm. Contact Y: %fm. Contact Z: %fm",cp.point.x, cp.point.y, cp.point.z);
 			contact_points.push_back(cp); // save into vector for internal processing
 			contact_type.push_back(solid_contact);
@@ -110,31 +122,32 @@ public:
 
 	/*** PATH PLAN ***/
 
-	std::vector<double> target_x = {.2,.375,.535,0.695}; // [m]
-
-	std::vector<double> target_y = {.34,0.34,.34,.34};
+	std::vector<double> target_x; // [m]
+	std::vector<double> target_y;
+	float x, y;
 
 	std::vector<bool> isMine = {0,1,1,1}; // 1 if mine, 0 if non-mine
 
-	int num_probes_per_obj = 8;
-	float spacing_between_probes = 0.01; // [m]
-	float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
-	float max_radius = 0.1; // [m] = 15cm
+	int sampling_point_index;
+	const int num_probes_per_obj = 2; // 8;
+	const float spacing_between_probes = 0.01; // [m]
+	const float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
+	const float max_radius = 0.1; // [m] = 15cm
+	const int num_targets = 1;
 
-	int num_targets = target_x.size();
+	std::vector<float> generateSamplingPoints(float _x, float _y){
+		sampling_point_index = 0;
+		x = _x;
+		y = _y;
 
-	int sampling_point_index = 0;
-	int total_num_samples = num_probes_per_obj*num_targets;
-
-	std::vector<float> generateSamplingPoints(){
 		std::vector<float> pts;
-		for(int i = 0; i<target_x.size(); i++){
-			float first_sample_point = target_x.at(i) - sample_width/2;
-			for(int j = 0; j<num_probes_per_obj; j++){
-				float x = first_sample_point+spacing_between_probes*j;
-				pts.push_back(x);
-			}
+
+		float first_sample_point = x - sample_width/2;
+		for(int j = 0; j<num_probes_per_obj; j++){
+			float x = first_sample_point+spacing_between_probes*j;
+			pts.push_back(x);
 		}
+
 		return pts;
 	}
 
@@ -267,7 +280,7 @@ public:
 			ROS_INFO("Calculated center at: X = %fm. Y = %fm. Radius = %fm", circle.center.x, circle.center.y, circle.rad);
 				(circle.rad<=max_radius) ? guess = true : guess = false; // check against radius threshold
 				if(guess){ // if it is a mine, calculate its center and its distance to the actual location
-					float dist = sqrt(pow(target_x.at(i)-circle.center.x,2)+pow(target_y.at(i)-circle.center.y,2));
+					float dist = sqrt(pow(x-circle.center.x,2)+pow(y-circle.center.y,2));
 					ROS_INFO("Object %d is a landmine. Calculated center is %fcm away from actual location.", i+1, dist*100);
 					(guess==isMine.at(i)) ? mine_correct++ : mine_incorrect++;
 				}

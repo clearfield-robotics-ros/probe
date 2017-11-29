@@ -76,8 +76,6 @@ public:
 		gantry_send_msg.data.push_back(1); // safe to move
 		gantry_send_msg.data.push_back((int)(pos_cmd*1000)); // input the position [mm]
 
-		ROS_INFO("Publish Gantry Pos");
-
 		gantry_cmd_pub.publish(gantry_send_msg); // send the message
 	}
 
