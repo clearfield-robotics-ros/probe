@@ -38,9 +38,9 @@ public:
 	Landmine landmine;
 
 	int sampling_point_index;
-	const int num_probes_per_obj = 5;
-	const float spacing_between_probes = 0.01; // [m]
-	const float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
+	int num_probes_per_obj;
+	const float spacing_between_probes = 0.015; // [m]
+	float sample_width;
 	const float max_radius = 0.1; // [m] = 15cm
 	const int num_targets = 1;
 
@@ -138,7 +138,7 @@ public:
 
 	/*** PLANNING NEW PROBES ***/
 
-	std::vector<float> newLandmine(float _x, float _y, float _radius, bool _mine){
+	std::vector<float> newLandmine(float _x, float _y, float _radius, bool _mine, int _samples){
 
 		contact_points.clear();
 		contact_type.clear();
@@ -148,6 +148,9 @@ public:
 		landmine.x_truth = _x;
 		landmine.y_truth = _y;
 		landmine.radius_truth = _radius;
+
+		num_probes_per_obj = _samples;
+		sample_width = (num_probes_per_obj-1)*spacing_between_probes;
 
 		// visualizeLandmineTruth();
 
@@ -281,12 +284,13 @@ public:
 			circle circle = classify(pts);
 			(circle.rad<=max_radius) ? guess = true : guess = false; // check against radius threshold
 
-			ROS_INFO("Calculated center at: X = %fm. Y = %fm. Radius = %fm", circle.center.x, circle.center.y, circle.rad);
-
 			landmine.mine_est = guess;	// Assign estimates to landmine object
-			landmine.x_est = circle.center.x;
+			landmine.x_est = circle.center.x - 0.2f;
 			landmine.y_est = circle.center.y;
 			landmine.radius_est = circle.rad;
+
+			// ROS_INFO("Calculated center at: X = %fm. Y = %fm. Radius = %fm", circle.center.x, circle.center.y, circle.rad);
+
 		} 
 		else guess = false; // if you didn't hit 3 points then you can't classify it
 
