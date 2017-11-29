@@ -17,19 +17,47 @@ class Landmine_Classifier
 {
 public:
 
-	// struct 
+	struct landmine {
+		bool mine_truth;
+		float x_truth;
+		float y_truth;
+		float radius_truth;
+		bool mine_est;
+		float x_est;
+		float y_est;
+		float radius_est;
+	};
 
-	// locations of gantry and probe carriages
-	float carriage_pos;
+	std::vector<landmine> landmines;
+	landmine current_landmine;
 
-	// initialize modes
-	int mode 				= 1; // idle
-	int desired_mode 		= 1;
-	bool handshake 			= false;
-	bool command_arrived 	= true;
+	int sampling_point_index;
+	const int num_probes_per_obj = 2; // 8;
+	const float spacing_between_probes = 0.01; // [m]
+	const float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
+	const float max_radius = 0.1; // [m] = 15cm
+	const int num_targets = 1;
 
-	bool initialized	 	= false;
-	bool solid_contact 		= false;
+	std::vector<float> newLandmine(float _x, float _y, float _radius, bool _mine){
+
+		current_landmine.mine_truth = _mine;
+		current_landmine.x_truth = _x;
+		current_landmine.y_truth = _y;
+		current_landmine.radius_truth = _mine;
+
+		sampling_point_index = 0;
+
+
+		std::vector<float> pts;
+
+		float first_sample_point = _x - sample_width/2;
+		for(int j = 0; j<num_probes_per_obj; j++){
+			float x = first_sample_point+spacing_between_probes*j;
+			pts.push_back(x);
+		}
+
+		return pts;
+	}
 
 	struct point2D { float x, y; };
 
@@ -37,6 +65,11 @@ public:
 	    point2D center;
 	    float rad;
 	};
+
+	// locations of gantry and probe carriages
+	float carriage_pos;
+	bool initialized	 	= false;
+	bool solid_contact 		= false;
 
 	ros::NodeHandle n;
 
@@ -120,36 +153,7 @@ public:
 	}
 
 
-	/*** PATH PLAN ***/
 
-	std::vector<double> target_x; // [m]
-	std::vector<double> target_y;
-	float x, y;
-
-	std::vector<bool> isMine = {0,1,1,1}; // 1 if mine, 0 if non-mine
-
-	int sampling_point_index;
-	const int num_probes_per_obj = 2; // 8;
-	const float spacing_between_probes = 0.01; // [m]
-	const float sample_width = (num_probes_per_obj-1)*spacing_between_probes;
-	const float max_radius = 0.1; // [m] = 15cm
-	const int num_targets = 1;
-
-	std::vector<float> generateSamplingPoints(float _x, float _y){
-		sampling_point_index = 0;
-		x = _x;
-		y = _y;
-
-		std::vector<float> pts;
-
-		float first_sample_point = x - sample_width/2;
-		for(int j = 0; j<num_probes_per_obj; j++){
-			float x = first_sample_point+spacing_between_probes*j;
-			pts.push_back(x);
-		}
-
-		return pts;
-	}
 
 	/*** CLASSIFICATION ***/
 
@@ -248,13 +252,7 @@ public:
 		return calcCircle(pts2d);
 	}
 
-	void printResults(){
-		ros::Rate delay(.5);
-		delay.sleep();
-		int mine_correct = 0;
-		int mine_incorrect = 0;
-		int nonmine_correct = 0;
-		int nonmine_incorrect = 0;
+	void calulateResults(int landmineCount){
 		bool guess;
 
 		// ROS_INFO("contact points size: %d", contact_points.size());
@@ -263,43 +261,64 @@ public:
 			int num_valid_points = 0;
 
 			for (int j = 0; j<num_probes_per_obj; j++){
-				ROS_INFO("i = %d, j = %d", i,j); // was ROS_INFO("4");
+				// ROS_INFO("i = %d, j = %d", i,j); 
 				bool valid_point = contact_type.at(num_probes_per_obj*i+j);
-							ROS_INFO("valid_point = %d",valid_point); // was ROS_INFO("4");
 				if (valid_point){ // if the point is valid (i.e. not at end stops)
-											ROS_INFO("valid_point inside"); // was ROS_INFO("4");
-
 					pts.push_back(contact_points.at(num_probes_per_obj*i+j)); // only put valid points in vector
 					num_valid_points++;
 				}
 			}
 			ROS_INFO("Number of valid points: %d", num_valid_points);
 
-			if (num_valid_points>=3){ // if you've got enough points to meaningfully classify with
+			if (num_valid_points>=3) { // if you've got enough points to meaningfully classify with
 				circle circle = classify(pts);
-			ROS_INFO("Calculated center at: X = %fm. Y = %fm. Radius = %fm", circle.center.x, circle.center.y, circle.rad);
 				(circle.rad<=max_radius) ? guess = true : guess = false; // check against radius threshold
-				if(guess){ // if it is a mine, calculate its center and its distance to the actual location
-					float dist = sqrt(pow(x-circle.center.x,2)+pow(y-circle.center.y,2));
-					ROS_INFO("Object %d is a landmine. Calculated center is %fcm away from actual location.", i+1, dist*100);
-					(guess==isMine.at(i)) ? mine_correct++ : mine_incorrect++;
-				}
-			} else guess = false; // if you didn't hit 3 points then you can't classify it
 
-			// } else if (num_valid_points>0 && num_valid_points<3){ // if you have 1 or 2 points
-			// 	ROS_INFO("Object %d is solid but there is not enough information to work out if is a landmine.", i+1);
-			// }
-
-			if(!guess)
-			{
-				ROS_INFO("Object %d is not a landmine.", i+1);
-				(guess==isMine.at(i)) ? nonmine_correct++ : nonmine_incorrect++;
-			}
+				current_landmine.mine_est = guess;	// Assign estimates to landmine object
+				current_landmine.x_est = circle.center.x;
+				current_landmine.y_est = circle.center.y;
+				current_landmine.radius_est = circle.rad;
+			} 
+			else guess = false; // if you didn't hit 3 points then you can't classify it
 		}
-		// ROS_INFO("%d out of 3 mines were identified correctly.", mine_correct);
-		// ROS_INFO("%d out of 3 non-mines were identified correctly.", nonmine_correct);
+
+		printResults(landmineCount);
 	}
 
+	void printResults(int landmineCount) {
+
+		printf("\n\t--------------------------------\n");
+		printf("\tTARGET #%d\n",landmineCount);
+		printf("\t--------------------------------\n");
+
+		printf("\tMEASURED TRUTH:\n");
+
+		if (!current_landmine.mine_truth) {
+			printf("\tLandmine: False");
+		}
+		else {
+			printf("\tLandmine: True\n");
+			printf("\tX: %f, Y: %f, Radius: %f", 
+				current_landmine.x_truth,
+				current_landmine.y_truth,
+				current_landmine.radius_truth);
+		}
+
+		printf("\n\tESTIMATED VALUES:\n");
+
+		if (!current_landmine.mine_est) {
+			printf("\tLandmine: False");
+		}
+		else {
+			printf("\tLandmine: True\n");
+			printf("\tX: %f, Y: %f, Radius: %f", 
+				current_landmine.x_est,
+				current_landmine.y_est,
+				current_landmine.radius_est);
+		}
+
+		printf("\n\t--------------------------------\n\n");
+	}
 
 private:
 

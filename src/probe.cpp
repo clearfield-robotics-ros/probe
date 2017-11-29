@@ -5,8 +5,11 @@
 
 #define M_PI 3.14159265358979323846
 
-std::vector<double> target_x = {.2,.6}; // {.2,.375,.535,0.695}; // [m]
-std::vector<double> target_y = {.34,.34}; //{.34,.34,.34,.34};
+								//	test1	test2	test3	test4 [m]
+std::vector<double> target_x = {	0.2,	0.375,	0.535,	0.695};
+std::vector<double> target_y = {	0.34,	0.34,	0.34,	0.34};
+std::vector<double> target_rad = {	0,		0.0575,	0.075,	0.0575};
+std::vector<bool> target_truth = {	false, 	true, 	true, 	true};
 
 int main(int argc, char **argv) {
 
@@ -19,12 +22,12 @@ int main(int argc, char **argv) {
 	ros::Rate delay(1);
 	delay.sleep(); // don't miss first command!
 
-
-
 	int landmine_index = 0;
 	std::vector<float> sampling_points = 
-		mine.generateSamplingPoints(target_x.at(landmine_index), 
-									target_y.at(landmine_index));
+		mine.newLandmine(target_x.at(landmine_index), 
+						 target_y.at(landmine_index), 
+						 target_rad.at(landmine_index), 
+						 target_truth.at(landmine_index));
 	ROS_INFO("%lu probe points generated for target at x = %f, y = %f", 
 		sampling_points.size(),target_x.at(landmine_index),target_y.at(landmine_index)); 
 
@@ -67,19 +70,21 @@ int main(int argc, char **argv) {
 						/*** FINISHED ONE ***/
 						if (mine.sampling_point_index >= mine.num_probes_per_obj) {
 
-							mine.printResults();
+							mine.calulateResults(landmine_index+1);
 							delay.sleep(); // wait 1 second
 
 							landmine_index++;
 
 							if (landmine_index < target_x.size()){
-								sampling_points = mine.generateSamplingPoints(target_x.at(landmine_index), 
-																			  target_y.at(landmine_index)); 
+								sampling_points = 
+									mine.newLandmine(target_x.at(landmine_index), 
+													 target_y.at(landmine_index), 
+													 target_rad.at(landmine_index), 
+													 target_truth.at(landmine_index));
 								ROS_INFO("%lu probe points generated", sampling_points.size()); 
 							}
 							/*** FINISHED ALL ***/
 							else {
-								ROS_INFO("Finished probing all objects..."); 
 								finished = true;
 							}
 						}
