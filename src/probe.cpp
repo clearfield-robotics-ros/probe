@@ -6,11 +6,11 @@
 #define M_PI 3.14159265358979323846
 
 								//	test1	test2	test3	test4 [m]
-std::vector<double> target_x = {	0.08, 	0.16, 	0.24,	0.365,	0.525,	0.695};
-std::vector<double> target_y = {	0.34,	0.34,	0.34,	0.36,	0.365,	0.365};
-std::vector<double> target_rad = {	0,		0,		0,		0.0575,	0.075,	0.0575};
-std::vector<bool> target_truth = {	false,	false,	false, 	true, 	true, 	true};
-std::vector<int> target_samples = {	3,		6,		3, 		6, 		6, 		6};
+std::vector<double> target_x = 		{	0.08, 	0.16, 	0.24,	0.365,	0.525,	0.695};
+std::vector<double> target_y = 		{	0.34,	0.34,	0.34,	0.36,	0.365,	0.365};
+std::vector<double> target_rad = 	{	0,		0,		0,		0.0575,	0.075,	0.0575};
+std::vector<bool> target_truth = 	{	false,	false,	false, 	true, 	true, 	true};
+std::vector<int> target_samples = 	{	3,		6,		3, 		6, 		6, 		6};
 
 int main(int argc, char **argv) {
 

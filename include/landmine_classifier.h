@@ -17,25 +17,26 @@ class Landmine_Classifier
 {
 public:
 
-	struct Landmine {
-		bool mine_truth;
-		float x_truth;
-		float y_truth;
-		float radius_truth;
-		bool mine_est;
-		float x_est;
-		float y_est;
-		float radius_est;
+	struct MineData {
+		bool mine;
+		float x, y, radius;
 	};
 
-	struct point2D { float x, y; };
+	struct Mine {
+		MineData truth, estimate;
+	};
+
+
+	struct point2D { 
+		float x, y; 
+	};
 
 	struct circle {
 	    point2D center;
 	    float rad;
 	};
 
-	Landmine landmine;
+	Mine mine;
 
 	int sampling_point_index;
 	int num_probes_per_obj;
@@ -75,7 +76,7 @@ public:
 
 	Landmine_Classifier()
 	{
-		vis_pub = n.advertise<visualization_msgs::Marker>( "visualization_marker", 0 );
+		// vis_pub = n.advertise<visualization_msgs::Marker>( "visualization_marker", 0 );
 
 		probe_status_sub = n.subscribe("probe_t/probe_status_reply", 1000, &Landmine_Classifier::probeStatusClbk, this);
 		probe_contact_sub = n.subscribe("probe_t/probe_contact_reply", 1000, &Landmine_Classifier::probeContactClbk, this);
@@ -86,14 +87,14 @@ public:
 	    carriage_pos = (float)msg.data.at(3)/1000.0; // fourth entry is the gantry carriage position [mm->m]    
 	    gantry_carriage.setOrigin( tf::Vector3(0.09+carriage_pos,-0.13,0.365)); // update origin of gantry carriage coordinate frame
 		gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
-	    br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
+	    // br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
 	}
 
 	void probeStatusClbk(const std_msgs::Int16MultiArray& msg){
 		carriage_pos = (float)msg.data.at(3)/1000;
 		probe_tip.setOrigin( tf::Vector3(0,0.075+carriage_pos,0));
 		probe_tip.setRotation(tf::Quaternion(0,0,0,1));
-		br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
+		// br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	}
 
 	void probeContactClbk(const std_msgs::Int16MultiArray& msg){
@@ -110,7 +111,7 @@ public:
 			
 			probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 			
-			br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
+			// br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 			
 			tf::StampedTransform probe_tf;
 			
@@ -142,12 +143,11 @@ public:
 
 		contact_points.clear();
 		contact_type.clear();
-		landmine = Landmine(); // reset
-
-		landmine.mine_truth = _mine;
-		landmine.x_truth = _x;
-		landmine.y_truth = _y;
-		landmine.radius_truth = _radius;
+		mine = mine(); // reset
+		mine.truth.mine 	= _mine;
+		mine.truth.x 		= _x;
+		mine.truth.y 		= _y;
+		mine.truth.radius 	= _radius;
 
 		num_probes_per_obj = _samples;
 		sample_width = (num_probes_per_obj-1)*spacing_between_probes;
@@ -281,17 +281,16 @@ public:
 		ROS_INFO("Number of valid points: %d", num_valid_points);
 
 		if (num_valid_points>=3) { // if you've got enough points to meaningfully classify with
+			
 			circle circle = classify(pts);
-			(circle.rad<=max_radius) ? guess = true : guess = false; // check against radius threshold
+			guess = true; // crude but working
+			// (circle.rad<=max_radius) ? guess = true : guess = false; // check against radius threshold
 
-			landmine.mine_est = guess;	// Assign estimates to landmine object
-			landmine.x_est = circle.center.x - 0.2f;
-			landmine.y_est = circle.center.y;
-			landmine.radius_est = circle.rad;
+			mine.estimate.mine 		= guess;
+			mine.estimate.x 		= circle.center.x - 0.2f;
+			mine.estimate.y 		= circle.center.y;
+			mine.estimate.radius 	= circle.rad;
 
-			// ROS_INFO("Calculated center at: X = %fm. Y = %fm. Radius = %fm", circle.center.x, circle.center.y, circle.rad);
-
-		} 
 		else guess = false; // if you didn't hit 3 points then you can't classify it
 
 		printResults(landmineCount);
