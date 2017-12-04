@@ -8,12 +8,8 @@
 
 	<node pkg="tf" type="static_transform_publisher" name="probe_rail" args="0 .24 -0.35 0 0 -.526 gantry_carriage probe_rail 100"  />
 
-	<node ns="gantry" name="gantry" pkg="rosserial_python" args="/dev/serial/by-id/usb-Teensyduino_USB_Serial_3376540-if00" type="serial_node.py" />
-
-	<node ns="probe_t" name="probe_t" pkg="rosserial_python" args="/dev/serial/by-id/usb-Teensyduino_USB_Serial_3652290-if00" type="serial_node.py" />
-
 	<node pkg="rviz" type="rviz" name="Probe_Visualization" args="-d $(find probe)/launch/probe.rviz"/>/>
 
-	<!--param name ="/use_sim_time" value="true"/-->
+	<param name ="/use_sim_time" value="true"/>
 
 </launch>

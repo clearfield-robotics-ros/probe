@@ -18,7 +18,7 @@ class Landmine_Classifier
 public:
 
 	struct MineData {
-		bool mine;
+		bool exists;
 		float x, y, radius;
 	};
 
@@ -76,7 +76,7 @@ public:
 
 	Landmine_Classifier()
 	{
-		// vis_pub = n.advertise<visualization_msgs::Marker>( "visualization_marker", 0 );
+		vis_pub = n.advertise<visualization_msgs::Marker>( "visualization_marker", 0 );
 
 		probe_status_sub = n.subscribe("probe_t/probe_status_reply", 1000, &Landmine_Classifier::probeStatusClbk, this);
 		probe_contact_sub = n.subscribe("probe_t/probe_contact_reply", 1000, &Landmine_Classifier::probeContactClbk, this);
@@ -87,22 +87,25 @@ public:
 	    carriage_pos = (float)msg.data.at(3)/1000.0; // fourth entry is the gantry carriage position [mm->m]    
 	    gantry_carriage.setOrigin( tf::Vector3(0.09+carriage_pos,-0.13,0.365)); // update origin of gantry carriage coordinate frame
 		gantry_carriage.setRotation(tf::Quaternion(0,0,0,1));
-	    // br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
+	    br.sendTransform(tf::StampedTransform(gantry_carriage,ros::Time::now(), "gantry", "gantry_carriage")); // broadcast probe tip transform}
 	}
 
 	void probeStatusClbk(const std_msgs::Int16MultiArray& msg){
+
 		carriage_pos = (float)msg.data.at(3)/1000;
+		// ROS_INFO("pos: %f", carriage_pos);
+
 		probe_tip.setOrigin( tf::Vector3(0,0.075+carriage_pos,0));
 		probe_tip.setRotation(tf::Quaternion(0,0,0,1));
-		// br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
+		br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 	}
 
 	void probeContactClbk(const std_msgs::Int16MultiArray& msg){
-		initialized = (bool)msg.data.at(1);
-		if(!initialized){ // if you got here by accident during initialization, don't record the point
-			return;
-		}
-		else {
+		// initialized = (bool)msg.data.at(1);
+		// if(!initialized){ // if you got here by accident during initialization, don't record the point
+		// 	return;
+		// }
+		// else {
 			carriage_pos = (float)msg.data.at(3)/1000; // second entry is the probe carriage position [mm]
 			solid_contact = (bool)msg.data.at(4);
 
@@ -111,7 +114,7 @@ public:
 			
 			probe_tip.setRotation(tf::Quaternion(0,0,0,1));
 			
-			// br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
+			br.sendTransform(tf::StampedTransform(probe_tip,ros::Time::now(), "probe_rail", "probe_tip")); // broadcast probe tip transform
 			
 			tf::StampedTransform probe_tf;
 			
@@ -133,18 +136,18 @@ public:
 				cp.point.x, cp.point.y, cp.point.z, solid_contact);
 			contact_points.push_back(cp); // save into vector for internal processing
 			contact_type.push_back(solid_contact);
-		}
+		// }
 	}
 
 
 	/*** PLANNING NEW PROBES ***/
 
-	std::vector<float> newLandmine(float _x, float _y, float _radius, bool _mine, int _samples){
+	std::vector<float> newLandmine(float _x, float _y, float _radius, bool _exists, int _samples){
 
 		contact_points.clear();
 		contact_type.clear();
-		mine = mine(); // reset
-		mine.truth.mine 	= _mine;
+		mine = Mine(); // reset
+		mine.truth.exists 	= _exists;
 		mine.truth.x 		= _x;
 		mine.truth.y 		= _y;
 		mine.truth.radius 	= _radius;
@@ -286,11 +289,11 @@ public:
 			guess = true; // crude but working
 			// (circle.rad<=max_radius) ? guess = true : guess = false; // check against radius threshold
 
-			mine.estimate.mine 		= guess;
+			mine.estimate.exists 	= guess;
 			mine.estimate.x 		= circle.center.x - 0.2f;
 			mine.estimate.y 		= circle.center.y;
 			mine.estimate.radius 	= circle.rad;
-
+		}
 		else guess = false; // if you didn't hit 3 points then you can't classify it
 
 		printResults(landmineCount);
@@ -305,28 +308,28 @@ public:
 
 		printf("\tMEASURED TRUTH:\n");
 
-		if (!landmine.mine_truth) {
+		if (!mine.truth.exists) {
 			printf("\tLandmine: False");
 		}
 		else {
 			printf("\tLandmine: True\n");
 			printf("\tX: %f, Y: %f, Radius: %f", 
-				landmine.x_truth,
-				landmine.y_truth,
-				landmine.radius_truth);
+				mine.truth.x,
+				mine.truth.y,
+				mine.truth.radius);
 		}
 
 		printf("\n\tESTIMATED VALUES:\n");
 
-		if (!landmine.mine_est) {
+		if (!mine.estimate.exists) {
 			printf("\tLandmine: False");
 		}
 		else {
 			printf("\tLandmine: True\n");
 			printf("\tX: %f, Y: %f, Radius: %f", 
-				landmine.x_est,
-				landmine.y_est,
-				landmine.radius_est);
+				mine.estimate.x,
+				mine.estimate.y,
+				mine.estimate.radius);
 		}
 
 		printf("\n\t--------------------------------\n\n");
@@ -340,15 +343,15 @@ public:
 		marker.id = landmineCount;
 		marker.type = visualization_msgs::Marker::CYLINDER;
 		marker.action = visualization_msgs::Marker::ADD;
-		marker.pose.position.x = landmine.x_est;
-		marker.pose.position.y = landmine.y_est;
+		marker.pose.position.x = mine.estimate.x;
+		marker.pose.position.y = mine.estimate.y;
 		marker.pose.position.z = 0;
-		marker.pose.orientation.x = 0.0;
+		marker.pose.orientation.x = 0.0; 
 		marker.pose.orientation.y = 0.0;
 		marker.pose.orientation.z = 0.0;
 		marker.pose.orientation.w = 1.0;
-		marker.scale.x = 2*landmine.radius_est;
-		marker.scale.y = 2*landmine.radius_est;
+		marker.scale.x = 2*mine.estimate.radius;
+		marker.scale.y = 2*mine.estimate.radius;
 		marker.scale.z = 0.05;
 		marker.color.a = 1.0; // Don't forget to set the alpha!
 		marker.color.r = 1.0;

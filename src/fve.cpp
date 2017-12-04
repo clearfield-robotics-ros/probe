@@ -5,16 +5,19 @@
 
 #define M_PI 3.14159265358979323846
 
-								//	test1	test2	test3	test4 [m]
+const float probe_calibration_position = 0.05f; // i.e calibrate probes at 50cm
+
+									//	test1	test2	test3	test4 [m]
 std::vector<double> target_x = 		{	0.08, 	0.16, 	0.24,	0.365,	0.525,	0.695};
 std::vector<double> target_y = 		{	0.34,	0.34,	0.34,	0.36,	0.365,	0.365};
 std::vector<double> target_rad = 	{	0,		0,		0,		0.0575,	0.075,	0.0575};
 std::vector<bool> target_truth = 	{	false,	false,	false, 	true, 	true, 	true};
-std::vector<int> target_samples = 	{	3,		6,		3, 		6, 		6, 		6};
+std::vector<int> target_samples = 	{	3,		3,		3, 		6, 		6, 		6};
 
 int main(int argc, char **argv) {
 
 	ros::init(argc, argv, "probe");
+
 	Probe probe;
 	Gantry gantry;
 	Landmine_Classifier mine;
@@ -33,18 +36,20 @@ int main(int argc, char **argv) {
 	ROS_INFO("%lu probe points generated for target at x = %f, y = %f", 
 		sampling_points.size(),target_x.at(landmine_index),target_y.at(landmine_index)); 
 
+
 	bool blockGantry = false;
 	bool blockProbe = false;
 	bool finished = false;
 
 	while (ros::ok() && !finished)
 	{
+
 		/*** GANTRY CALIBRATION ***/
-		if (gantry.initialized == 0) {
+		if (!gantry.initialized) {
 			ROS_INFO("Waiting for Gantry to Calibrate...");
 		}
 		else {
-			gantry.updateGantryState();
+			gantry.updateState();
 
 			if (probe.notWaiting() && gantry.notWaiting())
 			{
@@ -52,9 +57,8 @@ int main(int argc, char **argv) {
 				if (!probe.initialized){
 
 					if (probe.mode == 1 && !blockGantry) {
-						ROS_INFO("Waiting for Gantry to move to Calibration Position @ %f", gantry.probe_calibration_position);
-						gantry.pos_cmd = gantry.probe_calibration_position;
-						gantry.sendGantryPosCmd();
+						ROS_INFO("Waiting for Gantry to move to Calibration Position @ %f", probe_calibration_position);
+						gantry.sendPosCmd(probe_calibration_position);
 						blockGantry = true;
 						blockProbe = false;
 					}
@@ -92,10 +96,9 @@ int main(int argc, char **argv) {
 							}
 						}
 						else {
-							gantry.pos_cmd = sampling_points.at(mine.sampling_point_index);
 							mine.sampling_point_index++;
-							ROS_INFO("Sending Gantry to %f", gantry.pos_cmd);
-							gantry.sendGantryPosCmd();
+							ROS_INFO("Sending Gantry to %f", sampling_points.at(mine.sampling_point_index));
+							gantry.sendPosCmd(sampling_points.at(mine.sampling_point_index));
 							blockGantry = true;
 							blockProbe = false;
 						}
