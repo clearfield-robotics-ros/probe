@@ -1,4 +1,7 @@
 
+#ifndef GANTRY_H
+#define GANTRY_H
+
 #include "teensy.h"
 #include "ros/ros.h"
 #include "std_msgs/Bool.h"
@@ -33,8 +36,6 @@ private:
 	int  mode 		= 0; // idle
 	float pos_cmd	= 0;
 
-	int calibration_position;
-
 	ros::NodeHandle n;
 
 	// messages
@@ -48,3 +49,5 @@ private:
 	// subscribers
 	ros::Subscriber gantry_status_sub;
 };
+
+#endif 

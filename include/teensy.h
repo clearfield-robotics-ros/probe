@@ -1,8 +1,10 @@
 
+#ifndef TEENSY_H
+#define TEENSY_H
+
 class Teensy
 {
 protected:
-
 	bool handshake 			= false;
 	bool command_arrived 	= true;
 
@@ -16,3 +18,5 @@ public:
 		else return false;
 	}
 };
+
+#endif

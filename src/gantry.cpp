@@ -2,7 +2,6 @@
 #include <gantry.h>
 
 Gantry::Gantry() {
-
 	gantry_cmd_pub = n.advertise<std_msgs::Int16MultiArray>("gantry/gantry_cmd_send", 1000);
 	gantry_mode_pub = n.advertise<std_msgs::Int16>("gantry/gantry_cmd_hack_send", 1000);
 	gantry_status_sub = n.subscribe("gantry/gantryStat", 1000, &Gantry::statusClbk, this);
@@ -10,7 +9,6 @@ Gantry::Gantry() {
 
 
 void Gantry::statusClbk(const std_msgs::Int16MultiArray& msg) {
-
 	mode = msg.data.at(0); // first entry is the reported state
 	initialized = (bool)msg.data.at(1);
 
@@ -21,7 +19,6 @@ void Gantry::statusClbk(const std_msgs::Int16MultiArray& msg) {
 }
 
 void Gantry::sendPosCmd(float _pos_cmd) {
-
 	handshake = false;
 	command_arrived = false;
 
@@ -35,7 +32,6 @@ void Gantry::sendPosCmd(float _pos_cmd) {
 }
 
 void Gantry::sendIdleCmd(){
-
 	gantry_send_msg.data.clear(); // flush out previous data
 	gantry_send_msg.data.push_back(0); // not safe to move
 	gantry_send_msg.data.push_back(0); // input the position [mm]
@@ -43,7 +39,6 @@ void Gantry::sendIdleCmd(){
 }
 
 void Gantry::updateState() {
-	
 	gantry_mode_msg.data = 3;
 	gantry_mode_pub.publish(gantry_mode_msg);
 }

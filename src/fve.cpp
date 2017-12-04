@@ -7,7 +7,7 @@
 
 const float probe_calibration_position = 0.05f; // i.e calibrate probes at 50cm
 
-									//	test1	test2	test3	test4 [m]
+									//	test1	test2	test3	test4 	test5	test6	[m]
 std::vector<double> target_x = 		{	0.08, 	0.16, 	0.24,	0.365,	0.525,	0.695};
 std::vector<double> target_y = 		{	0.34,	0.34,	0.34,	0.36,	0.365,	0.365};
 std::vector<double> target_rad = 	{	0,		0,		0,		0.0575,	0.075,	0.0575};
@@ -64,7 +64,7 @@ int main(int argc, char **argv) {
 					}
 					else if (gantry.pos_cmd_reached && !blockProbe) {
 						ROS_INFO("Calibrating Probes...");
-						probe.sendProbeCmd(3);
+						probe.sendCmd(3);
 						blockProbe = true;
 						blockGantry = false;
 					}
@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
 
 					else if (gantry.pos_cmd_reached && !blockProbe) {
 						ROS_INFO("Probing...");
-						probe.sendProbeCmd(2);
+						probe.sendCmd(2);
 						blockProbe = true;
 						blockGantry = false;
 					}
