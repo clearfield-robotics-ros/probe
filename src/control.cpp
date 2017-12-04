@@ -3,6 +3,12 @@
 #include <gantry.h>
 #include <landmine_classifier.h>
 
+// #define GANTRY_CALIBRATION			0
+// #define GANTRY_TO_PROBE_CALIBRATION	1
+// #define PROBE_CALIBRATION 			2
+// #define PROBING 						3
+// #define MOVING_GANTRY				4
+	
 #define M_PI 3.14159265358979323846
 
 const float probe_calibration_position = 0.05f; // i.e calibrate probes at 50cm
