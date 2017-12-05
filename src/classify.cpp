@@ -84,7 +84,7 @@ void Classify::calulateResults() {
 	}
 	ROS_INFO("Number of valid points: %d", num_valid_points);
 
-	if (num_valid_points>=3) { // if you've got enough points to meaningfully classify with
+	if (num_valid_points >= 3) { // if you've got enough points to meaningfully classify with
 		
 		circle circle = classify(pts);
 		guess = true; // crude but working
@@ -181,7 +181,8 @@ int main(int argc, char **argv) {
 	ros::init(argc, argv, "classify");
 	ros::Rate loop_rate(10);
 
-	ROS_INFO("TESTING!");
+	Classify classify;
+	ROS_INFO("Classification node up & running!");
 
 	while (ros::ok()) {
 		ros::spinOnce();

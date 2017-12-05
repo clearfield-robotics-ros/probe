@@ -15,6 +15,11 @@
 
 class Classify
 {
+
+public:
+
+	Classify();
+	
 private:
 
 	struct MineData {
@@ -74,7 +79,7 @@ private:
 	tf::Transform probe_rail;
 	tf::Transform probe_tip;
 
-	Classify();
+
 
 	void newMineClbk(const probe::mine& msg);
 
@@ -90,7 +95,7 @@ private:
 
 	void visualizeLandmineEstimate();
 
-private:
+
 
 	float calcRadius(point2D& cc, std::vector<point2D>& points)
 	{

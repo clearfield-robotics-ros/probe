@@ -126,7 +126,8 @@ int main(int argc, char **argv) {
 					if (probe.mode == 1 && !blockGantry) {
 
 						/*** FINISHED ONE ***/
-						if (goodness_of_fit > goodness_of_fit_thresh) {
+						if (sampling_point_index >= num_probes_per_obj) {
+						// if (goodness_of_fit > goodness_of_fit_thresh) { //TODO
 							probeNextLandmine();
 							delay.sleep(); // wait 1 second
 
