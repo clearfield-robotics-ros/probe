@@ -14,6 +14,8 @@ Classify::Classify()
 
 void Classify::newMineClbk(const probe::mine& msg) {
 
+	ROS_INFO("New Info Recieved!");
+
 	if (!contact.empty()) printResults();
 
 	contact.clear();
@@ -179,10 +181,11 @@ void Classify::visualizeLandmineEstimate() {
 int main(int argc, char **argv) {
 
 	ros::init(argc, argv, "classify");
-	ros::Rate loop_rate(10);
 
 	Classify classify;
 	ROS_INFO("Classification node up & running!");
+
+	ros::Rate loop_rate(10);
 
 	while (ros::ok()) {
 		ros::spinOnce();

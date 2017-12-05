@@ -19,7 +19,7 @@ std::vector<double> target_x = 		{	0.08, 	0.16, 	0.24,	0.365,	0.525,	0.695};
 std::vector<double> target_y = 		{	0.34,	0.34,	0.34,	0.36,	0.365,	0.365};
 std::vector<double> target_rad = 	{	0,		0,		0,		0.0575,	0.075,	0.0575};
 std::vector<bool> target_truth = 	{	false,	false,	false, 	true, 	true, 	true};
-std::vector<int> target_samples = 	{	3,		3,		3, 		6, 		6, 		6};
+std::vector<int> target_samples = 	{	3,		3,		3, 		6, 		10, 		6};
 
 const float spacing_between_probes = 0.015; // [m]
 int sampling_point_index;
@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
 	ros::Subscriber mine_estimate = n.subscribe("mine_estimate_data", 1000, &estMineClbk);
 
 	ros::Rate loop_rate(10);
-	ros::Rate delay(1);
+	ros::Rate delay(0.2);
 	delay.sleep(); // don't miss first command!
 
 	probeNextLandmine();
@@ -95,7 +95,6 @@ int main(int argc, char **argv) {
 
 	while (ros::ok() && !finished)
 	{
-
 		/*** GANTRY CALIBRATION ***/
 		if (!gantry.initialized) {
 			ROS_INFO("Waiting for Gantry to Calibrate...");
@@ -126,23 +125,29 @@ int main(int argc, char **argv) {
 					if (probe.mode == 1 && !blockGantry) {
 
 						/*** FINISHED ONE ***/
+
+						ROS_INFO("%d >= %d", sampling_point_index, num_probes_per_obj);
+
 						if (sampling_point_index >= num_probes_per_obj) {
 						// if (goodness_of_fit > goodness_of_fit_thresh) { //TODO
-							probeNextLandmine();
-							delay.sleep(); // wait 1 second
 
 							/*** FINISHED ALL ***/
 							if (landmine_index == target_x.size()) {
 								finished = true;
 							}
+							else {
+								ROS_INFO("New Landmine...");
+								probeNextLandmine();
+								delay.sleep(); // wait 1 second
+							}
 						}
 						else {
 
 							// TODO: get new sample point!
-
-							sampling_point_index++;
 							ROS_INFO("Sending Gantry to %f", sampling_points.at(sampling_point_index));
 							gantry.sendPosCmd(sampling_points.at(sampling_point_index));
+							sampling_point_index++;
+
 							blockGantry = true;
 							blockProbe = false;
 						}

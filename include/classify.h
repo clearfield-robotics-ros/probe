@@ -79,8 +79,6 @@ private:
 	tf::Transform probe_rail;
 	tf::Transform probe_tip;
 
-
-
 	void newMineClbk(const probe::mine& msg);
 
 	void gantryStatusClbk(const std_msgs::Int16MultiArray& msg);
@@ -94,8 +92,6 @@ private:
 	void printResults();
 
 	void visualizeLandmineEstimate();
-
-
 
 	float calcRadius(point2D& cc, std::vector<point2D>& points)
 	{
