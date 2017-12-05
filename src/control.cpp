@@ -1,13 +1,14 @@
 
-#include <probe.h>
-#include <gantry.h>
-#include <landmine_classifier.h>
+#include "probe.h"
+#include "gantry.h"
+#include "probe/mine.h"
 
-// #define GANTRY_CALIBRATION			0
-// #define GANTRY_TO_PROBE_CALIBRATION	1
-// #define PROBE_CALIBRATION 			2
-// #define PROBING 						3
-// #define MOVING_GANTRY				4
+int control_state = 0; // TODO: implement this for cleaner internal state loop
+#define GANTRY_CALIBRATION			0
+#define GANTRY_TO_PROBE_CALIBRATION	1
+#define PROBE_CALIBRATION 			2
+#define PROBING 					3
+#define MOVING_GANTRY				4
 	
 #define M_PI 3.14159265358979323846
 
@@ -20,28 +21,73 @@ std::vector<double> target_rad = 	{	0,		0,		0,		0.0575,	0.075,	0.0575};
 std::vector<bool> target_truth = 	{	false,	false,	false, 	true, 	true, 	true};
 std::vector<int> target_samples = 	{	3,		3,		3, 		6, 		6, 		6};
 
+const float spacing_between_probes = 0.015; // [m]
+int sampling_point_index;
+int num_probes_per_obj;
+float sample_width;
+
+std::vector<float> newLandmine(double _x, int _samples) {
+
+	num_probes_per_obj = _samples;
+	sample_width = (num_probes_per_obj-1)*spacing_between_probes;
+
+	sampling_point_index = 0;
+
+	std::vector<float> pts;
+
+	float first_sample_point = _x - sample_width/2;
+	for(int j = 0; j<num_probes_per_obj; j++){
+		float x = first_sample_point+spacing_between_probes*j;
+		pts.push_back(x);
+	}
+	return pts;
+}
+
+ros::Publisher new_mine_data;
+std::vector<float> sampling_points;
+int landmine_index = 0;
+
+void probeNextLandmine() {
+
+	probe::mine mine;
+	mine.exists = target_truth.at(landmine_index);
+	mine.x = target_x.at(landmine_index);
+	mine.y = target_y.at(landmine_index);
+	mine.radius = target_rad.at(landmine_index);
+	new_mine_data.publish(mine);
+
+	sampling_points = newLandmine(target_x.at(landmine_index), 
+								  target_samples.at(landmine_index));
+
+	ROS_INFO("%lu probe points generated for target at x = %f, y = %f", 
+		sampling_points.size(),target_x.at(landmine_index),target_y.at(landmine_index)); 
+
+	landmine_index++;
+}
+
+float goodness_of_fit;
+const float goodness_of_fit_thresh = 5.0f;
+
+void estMineClbk(const probe::mine& msg) {
+	 goodness_of_fit = msg.goodness_of_fit; // use this information to stopping condition
+}
+
 int main(int argc, char **argv) {
 
 	ros::init(argc, argv, "probe");
 
 	Probe probe;
 	Gantry gantry;
-	Landmine_Classifier mine;
+
+	ros::NodeHandle n;
+	new_mine_data = n.advertise<probe::mine>("new_mine_data", 1000);
+	ros::Subscriber mine_estimate = n.subscribe("mine_estimate_data", 1000, &estMineClbk);
 
 	ros::Rate loop_rate(10);
 	ros::Rate delay(1);
 	delay.sleep(); // don't miss first command!
 
-	int landmine_index = 0;
-	std::vector<float> sampling_points = 
-		mine.newLandmine(target_x.at(landmine_index), 
-						 target_y.at(landmine_index), 
-						 target_rad.at(landmine_index), 
-						 target_truth.at(landmine_index),
-						 target_samples.at(landmine_index));
-	ROS_INFO("%lu probe points generated for target at x = %f, y = %f", 
-		sampling_points.size(),target_x.at(landmine_index),target_y.at(landmine_index)); 
-
+	probeNextLandmine();
 
 	bool blockGantry = false;
 	bool blockProbe = false;
@@ -80,31 +126,22 @@ int main(int argc, char **argv) {
 					if (probe.mode == 1 && !blockGantry) {
 
 						/*** FINISHED ONE ***/
-						if (mine.sampling_point_index >= mine.num_probes_per_obj) {
-
-							mine.calulateResults(landmine_index+1);
+						if (goodness_of_fit > goodness_of_fit_thresh) {
+							probeNextLandmine();
 							delay.sleep(); // wait 1 second
 
-							landmine_index++;
-
-							if (landmine_index < target_x.size()){
-								sampling_points = 
-									mine.newLandmine(target_x.at(landmine_index), 
-													 target_y.at(landmine_index), 
-													 target_rad.at(landmine_index), 
-													 target_truth.at(landmine_index),
-													 target_samples.at(landmine_index));
-								ROS_INFO("%lu probe points generated", sampling_points.size()); 
-							}
 							/*** FINISHED ALL ***/
-							else {
+							if (landmine_index == target_x.size()) {
 								finished = true;
 							}
 						}
 						else {
-							mine.sampling_point_index++;
-							ROS_INFO("Sending Gantry to %f", sampling_points.at(mine.sampling_point_index));
-							gantry.sendPosCmd(sampling_points.at(mine.sampling_point_index));
+
+							// TODO: get new sample point!
+
+							sampling_point_index++;
+							ROS_INFO("Sending Gantry to %f", sampling_points.at(sampling_point_index));
+							gantry.sendPosCmd(sampling_points.at(sampling_point_index));
 							blockGantry = true;
 							blockProbe = false;
 						}

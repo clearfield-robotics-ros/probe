@@ -3,6 +3,7 @@
 #define PROBE_H
 
 #include "teensy.h"
+#include "probe/mine.h"
 #include "ros/ros.h"
 #include "tf/transform_broadcaster.h"
 #include "tf/transform_listener.h"
@@ -19,8 +20,8 @@ class Probe : public Teensy
 {
 public:
 
-	int mode 				= 1; // idle
-	bool initialized	 	= false;
+	int mode = 1; // idle
+	bool initialized = false;
 
 	Probe();
 
@@ -30,7 +31,7 @@ public:
 
 private:
 
-	int desired_mode 		= 1;
+	int desired_mode = 1;
 
 	ros::NodeHandle n;
 

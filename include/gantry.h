@@ -17,8 +17,8 @@ class Gantry : public Teensy
 {
 public:
 
-	bool initialized 		= false;
-	bool pos_cmd_reached 	= false;
+	bool initialized = false;
+	bool pos_cmd_reached = false;
 	float carriage_pos;
 
 	Gantry();
@@ -33,8 +33,8 @@ public:
 
 private:
 
-	int  mode 		= 0; // idle
-	float pos_cmd	= 0;
+	int mode = 0; // idle
+	float pos_cmd = 0;
 
 	ros::NodeHandle n;
 
