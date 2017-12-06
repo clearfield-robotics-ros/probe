@@ -3,7 +3,7 @@
 
 Classify::Classify()
 {
-	vis_pub = n.advertise<visualization_msgs::Marker>( "visualization_marker", 0 );
+	vis_pub = n.advertise<visualization_msgs::Marker>( "visualization_marker", 10);
 	mine_estimate_pub = n.advertise<probe::mine>("mine_estimate_data", 1000);
 
 	new_mine_data = n.subscribe("new_mine_data", 1000, &Classify::newMineClbk, this);
@@ -14,9 +14,10 @@ Classify::Classify()
 
 void Classify::newMineClbk(const probe::mine& msg) {
 
-	ROS_INFO("New Info Recieved!");
-
-	if (!contact.empty()) printResults();
+	if (!contact.empty()) {
+		printResults();
+		viz_results();
+	}
 
 	contact.clear();
 	mine = Mine(); // reset
@@ -68,6 +69,10 @@ void Classify::probeContactClbk(const std_msgs::Int16MultiArray& msg){
 	nc.type = solid_contact;
 	contact.push_back(nc); // save into vector for internal processing
 
+	ROS_INFO("%lu", contact.size());
+
+	viz_probe(contact.size());
+
 	calulateResults();	
 }
 
@@ -92,17 +97,17 @@ void Classify::calulateResults() {
 		guess = true; // crude but working
 
 		mine.estimate.exists 	= guess;
-		mine.estimate.x 		= circle.center.x - 0.2f;
+		mine.estimate.x 		= circle.center.x;// - 0.2f;
 		mine.estimate.y 		= circle.center.y;
 		mine.estimate.radius 	= circle.rad;
 
 		mine_estimate.exists 	= guess;
-		mine_estimate.x 		= circle.center.x - 0.2f;
+		mine_estimate.x 		= circle.center.x;// - 0.2f;
 		mine_estimate.y 		= circle.center.y;
 		mine_estimate.radius 	= circle.rad;
 		mine_estimate.goodness_of_fit = circle.goodness_of_fit;
 
-		visualizeLandmineEstimate();
+		viz_mine();
 	}
 	else { // if you didn't hit 3 points then you can't classify it
 		guess = false;
@@ -151,17 +156,60 @@ void Classify::printResults() {
 	printf("\n\t--------------------------------\n\n");
 }
 
-void Classify::visualizeLandmineEstimate() {
+void Classify::viz_results() {
+
+	if (!mine.estimate.exists) {
+		float x = 0.0f, y = 0.0f, z = 0.0f;
+		int count = 0;
+		for (Contact i : contact) {
+				x += i.point.point.x;
+				y += i.point.point.y;
+				z += i.point.point.z;
+				count++;
+		}
+		x /= count;
+		y /= count;
+		z /= count;
+
+		viz_text("Landmine:\n  False", x, y, z + 0.03);
+	}
+	else {
+		float z = 0.0f;
+		int count = 0;
+		for (Contact i : contact) {
+			if (i.type == 1) {
+				z += i.point.point.z;
+				count++;
+			}
+		}
+		z /= count;
+
+		viz_text("Landmine:\n  True", mine.estimate.x, mine.estimate.y, z);
+	}
+}
+
+void Classify::viz_mine() {
+
+	float height = 0.0f;
+	int count = 0;
+	for (Contact i : contact) {
+		if (i.type == 1) {
+			height += i.point.point.z;
+			count++;
+		}
+	}
+	height /= count;
+
 	visualization_msgs::Marker marker;
 	marker.header.frame_id = "base_link";
 	marker.header.stamp = ros::Time();
-	marker.ns = "my_namespace";
+	marker.ns = "mine";
 	marker.id = landmineCount;
 	marker.type = visualization_msgs::Marker::CYLINDER;
 	marker.action = visualization_msgs::Marker::ADD;
 	marker.pose.position.x = mine.estimate.x;
 	marker.pose.position.y = mine.estimate.y;
-	marker.pose.position.z = 0;
+	marker.pose.position.z = height;
 	marker.pose.orientation.x = 0.0; 
 	marker.pose.orientation.y = 0.0;
 	marker.pose.orientation.z = 0.0;
@@ -169,13 +217,66 @@ void Classify::visualizeLandmineEstimate() {
 	marker.scale.x = 2*mine.estimate.radius;
 	marker.scale.y = 2*mine.estimate.radius;
 	marker.scale.z = 0.05;
+	marker.color.a = 0.5; // Don't forget to set the alpha!
+	marker.color.r = 1.0;
+	marker.color.g = 0.8;
+	marker.color.b = 0.8;
+	marker.mesh_resource = "package://pr2_description/meshes/base_v0/base.dae";
+	vis_pub.publish( marker );
+}
+
+void Classify::viz_text(std::string label, float x, float y, float z) {
+	visualization_msgs::Marker marker;
+	marker.header.frame_id = "base_link";
+	marker.header.stamp = ros::Time();
+	marker.ns = "label";
+	marker.id = landmineCount;
+	marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+	marker.action = visualization_msgs::Marker::ADD;
+	marker.text = label;
+	marker.pose.position.x = x;
+	marker.pose.position.y = y;
+	marker.pose.position.z = z;
+	marker.pose.orientation.w = 1.0;
+	marker.scale.z = 0.01;
 	marker.color.a = 1.0; // Don't forget to set the alpha!
 	marker.color.r = 1.0;
-	marker.color.g = 0.5;
-	marker.color.b = 0.5;
+	marker.color.g = 1.0;
+	marker.color.b = 1.0;
 	//only if using a MESH_RESOURCE marker type:
 	marker.mesh_resource = "package://pr2_description/meshes/base_v0/base.dae";
 	vis_pub.publish( marker );
+}
+
+
+void Classify::viz_probe(int i) {
+	visualization_msgs::Marker marker;
+	marker.header.frame_id = "base_link";
+	marker.header.stamp = ros::Time();
+	marker.ns = "sphere";
+	marker.id = viz_prove_index;
+	marker.type = visualization_msgs::Marker::SPHERE;
+	marker.action = visualization_msgs::Marker::ADD;
+	marker.pose.position.x = contact.at(i-1).point.point.x;
+	marker.pose.position.y = contact.at(i-1).point.point.y;
+	marker.pose.position.z = contact.at(i-1).point.point.z;
+	marker.pose.orientation.w = 1.0;
+	marker.scale.x = 0.01;
+	marker.scale.y = 0.01;
+	marker.scale.z = 0.01;
+	marker.color.a = 1.0; // Don't forget to set the alpha!
+	if (contact.at(i-1).type == 0){
+		marker.color.r = 0.0;
+		marker.color.g = 1.0;
+		marker.color.b = 0.0;
+	}
+	else {
+		marker.color.r = 1.0;
+		marker.color.g = 0.0;
+		marker.color.b = 0.0;
+	}
+	vis_pub.publish( marker );
+	viz_prove_index++;
 }
 
 int main(int argc, char **argv) {
@@ -185,11 +286,10 @@ int main(int argc, char **argv) {
 	Classify classify;
 	ROS_INFO("Classification node up & running!");
 
-	ros::Rate loop_rate(10);
+	ros::Rate loop_rate(25);
 
 	while (ros::ok()) {
 		ros::spinOnce();
 		loop_rate.sleep();
 	} 
-
 }

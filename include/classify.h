@@ -19,7 +19,16 @@ class Classify
 public:
 
 	Classify();
-	
+
+	void viz_mine();
+
+	void viz_results();
+
+	void viz_text(std::string label, float x, float y, float z);
+
+	int viz_prove_index = 0;
+	void viz_probe(int i);
+
 private:
 
 	struct MineData {
@@ -90,8 +99,6 @@ private:
 	void calulateResults();
 
 	void printResults();
-
-	void visualizeLandmineEstimate();
 
 	float calcRadius(point2D& cc, std::vector<point2D>& points)
 	{

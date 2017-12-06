@@ -11,7 +11,4 @@
 
   	<node name="classify" pkg="probe" type="classify" output="screen"/>
 
-
-	<param name ="/use_sim_time" value="true"/>
-
 </launch>
