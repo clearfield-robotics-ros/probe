@@ -1,4 +1,9 @@
 
+#ifndef CLASSIFY_H
+#define CLASSIFY_H
+
+#include "circle_type.h"
+#include "circle_fit.h"
 #include "ros/ros.h"
 #include "probe/mine.h"
 #include "tf/transform_broadcaster.h"
@@ -13,55 +18,26 @@
 #include "geometry_msgs/PointStamped.h"
 #include "visualization_msgs/Marker.h"
 
-class Classify
+class Classify : public Circle_Type
 {
-
 public:
 
 	Classify();
 
-	void viz_mine();
-
-	void viz_results();
-
-	void viz_text(std::string label, float x, float y, float z);
-
-	int viz_prove_index = 0;
-	void viz_probe(int i);
-
 private:
 
-	struct MineData {
-		bool exists;
-		float x, y, radius;
-	};
-
-	struct Mine {
-		MineData truth, estimate;
-	};
-
-	struct point2D { 
-		float x, y; 
-	};
-
-	struct circle {
-	    point2D center;
-	    float rad;
-	    float goodness_of_fit;
-	};
+	Circle_Fit circle_fit;
 
 	struct Contact {
 		geometry_msgs::PointStamped point;
 		bool type;
 	};
 
-	Mine mine;
 	int landmineCount = 0;
 	std::vector<Contact> contact;
 
 	// locations of gantry and probe carriages
 	float probe_carriage_pos, gantry_carriage_pos;
-	bool initialized	 	= false;
 	bool solid_contact 		= false;
 
 	ros::NodeHandle n;
@@ -100,100 +76,14 @@ private:
 
 	void printResults();
 
-	float calcRadius(point2D& cc, std::vector<point2D>& points)
-	{
-		float rHat = 0;
-		float dx, dy;
-		int numPoints = points.size();
-		for (int i = 0; i<numPoints; i++){
-			dx = points[i].x - cc.x;
-			dy = points[i].y - cc.y;
-			rHat += sqrt(dx*dx + dy*dy);
-		}
-		return rHat / numPoints;
-	}
+	void viz_mine();
 
-	point2D circumcenter(const std::vector<point2D>& points)
-	{
-		float pIx = points[0].x;
-		float pIy = points[0].y;
-		float pJx = points[1].x;
-		float pJy = points[1].y;
-		float pKx = points[2].x;
-		float pKy = points[2].y;
+	void viz_results();
 
-		point2D dIJ, dJK, dKI;
-		dIJ.x = pJx - pIx;
-		dIJ.y = pJy - pIy;
+	void viz_text(std::string label, float x, float y, float z);
 
-		dJK.x = pKx - pJx;
-		dJK.y = pKy - pJy;
-
-		dKI.x = pIx - pKx;
-		dKI.y = pIy - pKy;
-
-		float sqI = pIx * pIx + pIy * pIy;
-		float sqJ = pJx * pJx + pJy * pJy;
-		float sqK = pKx * pKx + pKy * pKy;
-
-		float det = dJK.x * dIJ.y - dIJ.x * dJK.y;
-		point2D cc;
-
-		if (abs(det) < 1.0e-10)
-		{
-			cc.x=0;
-			cc.y=0;
-		}
-
-		cc.x = (sqI * dJK.y + sqJ * dKI.y + sqK * dIJ.y) / (2 * det);
-		cc.y = -(sqI * dJK.x + sqJ * dKI.x + sqK * dIJ.x) / (2 * det);
-
-		return cc;
-	}
-
-	circle calcCircle(std::vector<point2D>& points)
-	{
-		circle circle;
-		point2D cc;
-		float sigX = 0;
-		float sigY = 0;
-		int q = 0;
-
-		int n = points.size();
-
-	  for (int i = 0;i<n-2;i++){ // go through all the combinations of points
-	  	for (int j = i+1;j<n-1;j++){
-	  		for (int k = j+1;k<n;k++){	// create a vector of three points
-	  			std::vector<point2D> threePoints;
-	  			threePoints.push_back(points[i]);
-	  			threePoints.push_back(points[j]);
-	  			threePoints.push_back(points[k]);
-	  			cc = circumcenter(threePoints);
-	  			sigX += cc.x;
-	  			sigY += cc.y;
-	  			q++;
-	  		}
-	  	}
-	  }
-
-	  cc.x = sigX/q;
-	  cc.y = sigY/q;
-	  circle.center = cc;
-	  circle.rad = calcRadius(cc, points);
-	  return circle;
-	}
-
-	circle classify(const std::vector<geometry_msgs::PointStamped>& pts3d)
-	{
-		std::vector<point2D> pts2d;
-		float x,y;
-		for(int i = 0; i < pts3d.size(); i++){
-			x = pts3d.at(i).point.x; // project 3d points to 2d
-			y = pts3d.at(i).point.y;
-			ROS_INFO("x:%f y:%f",x,y);
-			pts2d.push_back({x,y});
-		}
-		return calcCircle(pts2d);
-	}
-
+	int viz_prove_index = 0;
+	void viz_probe(int i);
 };
+
+#endif

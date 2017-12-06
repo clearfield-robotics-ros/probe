@@ -1,8 +1,7 @@
 
 #include "classify.h"
 
-Classify::Classify()
-{
+Classify::Classify() {
 	vis_pub = n.advertise<visualization_msgs::Marker>( "visualization_marker", 10);
 	mine_estimate_pub = n.advertise<probe::mine>("mine_estimate_data", 1000);
 
@@ -13,19 +12,12 @@ Classify::Classify()
 }
 
 void Classify::newMineClbk(const probe::mine& msg) {
-
 	if (!contact.empty()) {
 		printResults();
 		viz_results();
 	}
-
 	contact.clear();
-	mine = Mine(); // reset
 	landmineCount++;
-	mine.truth.exists 	= msg.exists;
-	mine.truth.x 		= msg.x;
-	mine.truth.y 		= msg.y;
-	mine.truth.radius 	= msg.radius;
 }
 
 void Classify::gantryStatusClbk(const std_msgs::Int16MultiArray& msg) {
@@ -60,8 +52,7 @@ void Classify::probeContactClbk(const std_msgs::Int16MultiArray& msg){
 	cp.point.y = probe_tip_origin.y();
 	cp.point.z = probe_tip_origin.z();
 
-	/*** CLASSIFICATION ***/
-	ROS_INFO("Contact X: %fm. Contact Y: %fm. Contact Z: %fm, Object Found?: %d",
+	ROS_INFO("z: %fm. y: %fm. z: %fm, contact?: %d",
 		cp.point.x, cp.point.y, cp.point.z, solid_contact);
 
 	Contact nc;
@@ -69,10 +60,7 @@ void Classify::probeContactClbk(const std_msgs::Int16MultiArray& msg){
 	nc.type = solid_contact;
 	contact.push_back(nc); // save into vector for internal processing
 
-	ROS_INFO("%lu", contact.size());
-
 	viz_probe(contact.size());
-
 	calulateResults();	
 }
 
@@ -89,23 +77,18 @@ void Classify::calulateResults() {
 			num_valid_points++;
 		}
 	}
-	ROS_INFO("Number of valid points: %d", num_valid_points);
+	// ROS_INFO("Number of valid points: %d", num_valid_points);
 
 	if (num_valid_points >= 3) { // if you've got enough points to meaningfully classify with
 		
-		circle circle = classify(pts);
+		circle c = circle_fit.find(pts);
 		guess = true; // crude but working
 
-		mine.estimate.exists 	= guess;
-		mine.estimate.x 		= circle.center.x;// - 0.2f;
-		mine.estimate.y 		= circle.center.y;
-		mine.estimate.radius 	= circle.rad;
-
 		mine_estimate.exists 	= guess;
-		mine_estimate.x 		= circle.center.x;// - 0.2f;
-		mine_estimate.y 		= circle.center.y;
-		mine_estimate.radius 	= circle.rad;
-		mine_estimate.goodness_of_fit = circle.goodness_of_fit;
+		mine_estimate.x 		= c.center.x;// - 0.2f;
+		mine_estimate.y 		= c.center.y;
+		mine_estimate.radius 	= c.rad;
+		mine_estimate.goodness_of_fit = c.goodness_of_fit;
 
 		viz_mine();
 	}
@@ -126,39 +109,22 @@ void Classify::printResults() {
 	printf("\n\t--------------------------------\n");
 	printf("\tTARGET #%d\n",landmineCount);
 	printf("\t--------------------------------\n");
-
-	printf("\tMEASURED TRUTH:\n");
-
-	if (!mine.truth.exists) {
+	if (!mine_estimate.exists) {
 		printf("\tLandmine: False");
 	}
 	else {
 		printf("\tLandmine: True\n");
 		printf("\tX: %f, Y: %f, Radius: %f", 
-			mine.truth.x,
-			mine.truth.y,
-			mine.truth.radius);
+			mine_estimate.x,
+			mine_estimate.y,
+			mine_estimate.radius);
 	}
-
-	printf("\n\tESTIMATED VALUES:\n");
-
-	if (!mine.estimate.exists) {
-		printf("\tLandmine: False");
-	}
-	else {
-		printf("\tLandmine: True\n");
-		printf("\tX: %f, Y: %f, Radius: %f", 
-			mine.estimate.x,
-			mine.estimate.y,
-			mine.estimate.radius);
-	}
-
 	printf("\n\t--------------------------------\n\n");
 }
 
 void Classify::viz_results() {
 
-	if (!mine.estimate.exists) {
+	if (!mine_estimate.exists) {
 		float x = 0.0f, y = 0.0f, z = 0.0f;
 		int count = 0;
 		for (Contact i : contact) {
@@ -171,7 +137,7 @@ void Classify::viz_results() {
 		y /= count;
 		z /= count;
 
-		viz_text("Landmine:\n  False", x, y, z + 0.03);
+		viz_text("False", x, y, z + 0.03);
 	}
 	else {
 		float z = 0.0f;
@@ -184,21 +150,21 @@ void Classify::viz_results() {
 		}
 		z /= count;
 
-		viz_text("Landmine:\n  True", mine.estimate.x, mine.estimate.y, z);
+		viz_text("True", mine_estimate.x, mine_estimate.y, z);
 	}
 }
 
 void Classify::viz_mine() {
 
-	float height = 0.0f;
+	float z = 0.0f;
 	int count = 0;
 	for (Contact i : contact) {
 		if (i.type == 1) {
-			height += i.point.point.z;
+			z += i.point.point.z;
 			count++;
 		}
 	}
-	height /= count;
+	z /= count;
 
 	visualization_msgs::Marker marker;
 	marker.header.frame_id = "base_link";
@@ -207,21 +173,22 @@ void Classify::viz_mine() {
 	marker.id = landmineCount;
 	marker.type = visualization_msgs::Marker::CYLINDER;
 	marker.action = visualization_msgs::Marker::ADD;
-	marker.pose.position.x = mine.estimate.x;
-	marker.pose.position.y = mine.estimate.y;
-	marker.pose.position.z = height;
+	marker.pose.position.x = mine_estimate.x;
+	marker.pose.position.y = mine_estimate.y;
+	marker.pose.position.z = z;
 	marker.pose.orientation.x = 0.0; 
 	marker.pose.orientation.y = 0.0;
 	marker.pose.orientation.z = 0.0;
 	marker.pose.orientation.w = 1.0;
-	marker.scale.x = 2*mine.estimate.radius;
-	marker.scale.y = 2*mine.estimate.radius;
+	marker.scale.x = 2*mine_estimate.radius;
+	marker.scale.y = 2*mine_estimate.radius;
 	marker.scale.z = 0.05;
-	marker.color.a = 0.5; // Don't forget to set the alpha!
+	marker.color.a = 0.5;
 	marker.color.r = 1.0;
 	marker.color.g = 0.8;
 	marker.color.b = 0.8;
-	marker.mesh_resource = "package://pr2_description/meshes/base_v0/base.dae";
+	marker.mesh_resource = 
+		"package://pr2_description/meshes/base_v0/base.dae";
 	vis_pub.publish( marker );
 }
 
@@ -238,16 +205,15 @@ void Classify::viz_text(std::string label, float x, float y, float z) {
 	marker.pose.position.y = y;
 	marker.pose.position.z = z;
 	marker.pose.orientation.w = 1.0;
-	marker.scale.z = 0.01;
-	marker.color.a = 1.0; // Don't forget to set the alpha!
+	marker.scale.z = 0.015;
+	marker.color.a = 0.75;
 	marker.color.r = 1.0;
 	marker.color.g = 1.0;
 	marker.color.b = 1.0;
-	//only if using a MESH_RESOURCE marker type:
-	marker.mesh_resource = "package://pr2_description/meshes/base_v0/base.dae";
+	marker.mesh_resource = 
+		"package://pr2_description/meshes/base_v0/base.dae";
 	vis_pub.publish( marker );
 }
-
 
 void Classify::viz_probe(int i) {
 	visualization_msgs::Marker marker;
@@ -264,7 +230,7 @@ void Classify::viz_probe(int i) {
 	marker.scale.x = 0.01;
 	marker.scale.y = 0.01;
 	marker.scale.z = 0.01;
-	marker.color.a = 1.0; // Don't forget to set the alpha!
+	marker.color.a = 1.0;
 	if (contact.at(i-1).type == 0){
 		marker.color.r = 0.0;
 		marker.color.g = 1.0;
@@ -275,6 +241,8 @@ void Classify::viz_probe(int i) {
 		marker.color.g = 0.0;
 		marker.color.b = 0.0;
 	}
+	marker.mesh_resource = 
+		"package://pr2_description/meshes/base_v0/base.dae";
 	vis_pub.publish( marker );
 	viz_prove_index++;
 }
