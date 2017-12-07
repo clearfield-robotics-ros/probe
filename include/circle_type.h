@@ -11,9 +11,9 @@ protected:
 	};
 
 	struct circle {
-	    point2D center;
-	    float rad;
-	    float goodness_of_fit;
+		point2D center;
+		float rad;
+		float goodness_of_fit;
 	};
 };
 
